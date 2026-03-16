@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ title }}</title>
-  <link rel="stylesheet" href="assets/css/main.css">
+  <link rel="stylesheet" href="assets/css/main.css?v={{ build_ts }}">
   <link rel="stylesheet" href="assets/css/glightbox.min.css">
   <script>window.MANIFEST = {{ manifest_json | safe }};</script>
 </head>
@@ -33,6 +33,6 @@
 
   <script src="assets/js/glightbox.min.js"></script>
   <script src="assets/js/tablesort.min.js"></script>
-  <script src="assets/js/app.js"></script>
+  <script src="assets/js/app.js?v={{ build_ts }}"></script>
 </body>
 </html>

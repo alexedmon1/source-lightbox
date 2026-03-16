@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
 from pathlib import Path
 
 import jinja2
@@ -134,7 +135,11 @@ def _render_html(out: Path, manifest_json: str, title: str = "Source Analysis Ga
         autoescape=True,
     )
     template = env.get_template("index.html.j2")
-    html = template.render(manifest_json=manifest_json, title=title)
+    html = template.render(
+        manifest_json=manifest_json,
+        title=title,
+        build_ts=str(int(time.time())),
+    )
     (out / "index.html").write_text(html, encoding="utf-8")
 
 

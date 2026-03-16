@@ -577,8 +577,8 @@
     // Determine which columns to hide (diagnostic/model-fit columns)
     var hideCols = computeHiddenColumns(headers);
 
-    // Find grouping columns
-    var groupCols = findGroupingColumns(headers);
+    // Find grouping columns (pass rows so we only group columns that actually have repeated values)
+    var groupCols = findGroupingColumns(headers, rows);
     var visibleCount = hideCols.filter(function (h) { return !h; }).length;
 
     // Sort rows by grouping columns for clean visual grouping
@@ -630,7 +630,7 @@
             currentGroups[gi2] = null;
           }
           var formattedVal = gc.formatter(val);
-          var level = gi === 0 ? "group-header-primary" : "group-header-secondary";
+          var level = gi === 0 ? "group-header-primary" : gi === 1 ? "group-header-secondary" : "group-header-tertiary";
           html += '<tr class="' + level + '"><td colspan="' + dataColCount + '">' +
             escapeHtml(gc.label + ": " + formattedVal) + '</td></tr>';
         }
@@ -655,36 +655,88 @@
   /**
    * Find columns to use for grouping, in priority order.
    * Returns array of {idx, label, formatter} objects.
+   * Supports up to 3 levels: contrast → measure/band → metric.
+   * Only includes a column if it actually creates multi-row groups
+   * within the context of already-chosen parent grouping columns.
    */
-  function findGroupingColumns(headers) {
+  function findGroupingColumns(headers, rows) {
     var lowerHeaders = headers.map(function (h) { return h.toLowerCase().replace(/^"|"$/g, ""); });
     var groups = [];
-    var rowCount = 0; // we don't have row count here, but grouping is always useful
+    var usedIndices = [];
+    var totalRows = rows ? rows.length : 0;
 
-    // Primary: contrast
-    var contrastIdx = lowerHeaders.indexOf("contrast");
-    if (contrastIdx >= 0) {
-      groups.push({
-        idx: contrastIdx,
-        label: "Contrast",
-        formatter: formatContrast,
-      });
+    // Helper: check if adding column at idx creates any leaf group with >1 row,
+    // given the already-chosen parent grouping columns.
+    function columnAddsGrouping(idx) {
+      if (!rows || totalRows <= 1) return false;
+
+      // Build composite keys from parent groups + this candidate
+      var allIndices = usedIndices.concat([idx]);
+      var keyCounts = {};
+      for (var r = 0; r < rows.length; r++) {
+        var key = allIndices.map(function (i) {
+          return (rows[r][i] || "").toString().replace(/^"|"$/g, "");
+        }).join("||");
+        keyCounts[key] = (keyCounts[key] || 0) + 1;
+      }
+
+      // Check if at least some leaf groups have >1 row
+      // (i.e., this column doesn't make every group a singleton)
+      var multiRowGroups = 0;
+      var totalGroups = 0;
+      for (var k in keyCounts) {
+        totalGroups++;
+        if (keyCounts[k] > 1) multiRowGroups++;
+      }
+
+      // Also check that this column has fewer unique values than rows
+      // within the parent context (it actually groups something)
+      var uniqueVals = {};
+      for (var r = 0; r < rows.length; r++) {
+        var v = (rows[r][idx] || "").toString().replace(/^"|"$/g, "");
+        uniqueVals[v] = true;
+      }
+      var uniqueCount = Object.keys(uniqueVals).length;
+      if (uniqueCount >= totalRows) return false;
+
+      // If adding this column makes ALL groups singletons, it's not useful as a grouping column.
+      // Keep the column as a regular data column instead.
+      return totalGroups < totalRows;
     }
 
-    // Secondary: measure_type > metric > band (pick the most informative one)
-    var secondaryCandidates = [
-      { names: ["measure_type", "type"], label: "Measure Type", formatter: formatMeasureName },
+    // Primary: contrast (or "key" for NBS tables)
+    var contrastIdx = lowerHeaders.indexOf("contrast");
+    if (contrastIdx < 0) contrastIdx = lowerHeaders.indexOf("key");
+    if (contrastIdx >= 0 && columnAddsGrouping(contrastIdx)) {
+      groups.push({
+        idx: contrastIdx,
+        label: contrastIdx === lowerHeaders.indexOf("key") ? "Key" : "Contrast",
+        formatter: contrastIdx === lowerHeaders.indexOf("key") ? function (v) { return formatName(v); } : formatContrast,
+      });
+      usedIndices.push(contrastIdx);
+    }
+
+    // Ordered list of all possible secondary/tertiary groupings
+    var candidates = [
+      { names: ["measure_type", "type", "power_type"], label: "Measure Type", formatter: formatMeasureName },
       { names: ["dv", "measure"], label: "Measure", formatter: formatMeasureName },
-      { names: ["metric"], label: "Metric", formatter: function (v) { return formatName(v); } },
+      { names: ["freq_pair"], label: "Frequency Pair", formatter: function (v) { return formatName(v); } },
+      { names: ["parameter"], label: "Parameter", formatter: function (v) { return formatName(v); } },
       { names: ["band"], label: "Band", formatter: function (v) { return formatName(v); } },
+      { names: ["conn_metric"], label: "Connectivity", formatter: function (v) { return formatName(v); } },
+      { names: ["metric"], label: "Metric", formatter: function (v) { return formatName(v); } },
+      { names: ["graph_metric"], label: "Graph Metric", formatter: function (v) { return formatName(v); } },
     ];
 
-    for (var cand of secondaryCandidates) {
+    // Add up to 2 more grouping levels from candidates
+    for (var cand of candidates) {
+      if (groups.length >= 3) break;
       for (var name of cand.names) {
         var idx = lowerHeaders.indexOf(name);
-        if (idx >= 0 && idx !== contrastIdx) {
+        if (idx >= 0 && usedIndices.indexOf(idx) < 0 && columnAddsGrouping(idx)) {
           groups.push({ idx: idx, label: cand.label, formatter: cand.formatter });
-          return groups; // Only use first matching secondary
+          usedIndices.push(idx);
+          break;
         }
       }
     }

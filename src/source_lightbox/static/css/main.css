@@ -376,6 +376,16 @@ main {
   font-style: italic;
 }
 
+.table-container tr.group-header-tertiary td {
+  background: transparent;
+  font-weight: 500;
+  font-size: 11px;
+  padding: 4px 10px 2px 36px;
+  border-bottom: 1px dotted var(--border-color);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 /* === Summary === */
 .summary-content {
   background: var(--bg-card);
