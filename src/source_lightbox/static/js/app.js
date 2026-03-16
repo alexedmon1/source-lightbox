@@ -9,7 +9,15 @@
   const ACRONYMS = {
     "psd": "PSD", "pac": "PAC", "mvpa": "MVPA", "roi": "ROI", "lmm": "LMM",
     "itc": "ITC", "ersp": "ERSP", "stp": "STP", "svm": "SVM", "nbs": "NBS",
-    "assr": "ASSR", "qc": "QC", "eeg": "EEG", "ica": "ICA",
+    "assr": "ASSR", "qc": "QC", "eeg": "EEG", "ica": "ICA", "falff": "fALFF",
+    "fdr": "FDR", "aic": "AIC", "bic": "BIC", "se": "SE", "df": "df",
+  };
+
+  /* ── Group label map for readable contrast display ── */
+  const GROUP_LABELS = {
+    "vehicle": "Vehicle",
+    "6mgkg": "AUT00201 (6 mg/kg)",
+    "30mgkg": "AUT00206 (30 mg/kg)",
   };
 
   /* ── State ── */
@@ -262,6 +270,11 @@
   function renderAnalysisContent(paradigm, analysis, data, source, allSources) {
     var html = '<h2 class="section-header">' + formatName(paradigm) + ' — ' + formatName(analysis) + '</h2>';
 
+    // Summary — at the top
+    if (data.summary) {
+      html += '<div class="summary-content">' + data.summary + '</div>';
+    }
+
     // Comparison mode
     var sourcesWithFigs = allSources.filter(function (s) { return data.figures[s] && data.figures[s].length > 0; });
 
@@ -285,18 +298,13 @@
       for (var ti = 0; ti < tables.length; ti++) {
         var tbl = tables[ti];
         var id = "tbl-" + ti + "-" + tbl.filename.replace(/[^a-z0-9]/gi, "_");
+        var displayName = formatTableFilename(tbl.filename);
         html += '<button class="table-toggle" data-table-idx="' + ti + '" data-table-id="' + id + '">';
-        html += '<span class="arrow">&#9654;</span> ' + tbl.filename;
+        html += '<span class="arrow">&#9654;</span> ' + displayName;
         html += "</button>";
         html += '<div id="' + id + '" class="table-container" style="display:none"></div>';
       }
       html += "</div>";
-    }
-
-    // Summary
-    if (data.summary) {
-      html += '<h3 class="section-header" style="font-size:15px">Analysis Summary</h3>';
-      html += '<div class="summary-content">' + data.summary + '</div>';
     }
 
     setContent(html);
@@ -566,9 +574,14 @@
     var headers = tbl.headers;
     var rows = tbl.rows;
 
+    // Determine which columns to hide (diagnostic/model-fit columns)
+    var hideCols = computeHiddenColumns(headers);
+
+    // Format headers for display
     var html = "<table><thead><tr>";
-    for (var h of headers) {
-      html += '<th>' + escapeHtml(h) + '<span class="sort-indicator"></span></th>';
+    for (var ci = 0; ci < headers.length; ci++) {
+      if (hideCols[ci]) continue;
+      html += '<th>' + escapeHtml(formatColumnHeader(headers[ci])) + '<span class="sort-indicator"></span></th>';
     }
     html += "</tr></thead><tbody>";
 
@@ -579,8 +592,9 @@
     for (var row of rows) {
       var isSig = sigIdx >= 0 && row[sigIdx] && row[sigIdx].toUpperCase() === "TRUE";
       html += '<tr' + (isSig ? ' class="significant"' : '') + '>';
-      for (var cell of row) {
-        html += '<td>' + escapeHtml(cell) + '</td>';
+      for (var ci = 0; ci < row.length; ci++) {
+        if (hideCols[ci]) continue;
+        html += '<td>' + formatCellValue(row[ci], headers[ci]) + '</td>';
       }
       html += "</tr>";
     }
@@ -595,6 +609,238 @@
     if (table && window.Tablesort) {
       new Tablesort(table);
     }
+  }
+
+  /**
+   * Determine which columns to hide for cleaner presentation.
+   * Returns an array of booleans (true = hidden).
+   */
+  function computeHiddenColumns(headers) {
+    var lowerHeaders = headers.map(function (h) { return h.toLowerCase().replace(/"/g, ""); });
+    var hide = new Array(headers.length).fill(false);
+
+    // Always hide these diagnostic/redundant columns
+    var alwaysHide = [
+      "converged", "singular", "convergence",
+      "aic_spatial", "bic_spatial", "aic_nonspatial", "bic_nonspatial", "aic_improvement",
+      "sig_label",
+    ];
+
+    for (var i = 0; i < lowerHeaders.length; i++) {
+      if (alwaysHide.indexOf(lowerHeaders[i]) >= 0) {
+        hide[i] = true;
+      }
+    }
+
+    return hide;
+  }
+
+  /**
+   * Format a column header for display.
+   */
+  function formatColumnHeader(header) {
+    // Strip surrounding quotes
+    var h = header.replace(/^"|"$/g, "");
+
+    // Special header renames
+    var renames = {
+      "group_f": "Group F",
+      "group_p": "Group p",
+      "roi_f": "ROI F",
+      "roi_p": "ROI p",
+      "interaction_f": "Interaction F",
+      "interaction_p": "Interaction p",
+      "group_q": "Group q (FDR)",
+      "group_significant": "Group Sig.",
+      "interaction_q": "Interaction q (FDR)",
+      "interaction_significant": "Interact. Sig.",
+      "n_a": "N (A)",
+      "n_b": "N (B)",
+      "n_rois": "N ROIs",
+      "n_regions": "N Regions",
+      "group_a": "Group A",
+      "group_b": "Group B",
+      "measure_type": "Type",
+      "dv": "Measure",
+      "t_ratio": "t",
+      "t_value": "t",
+      "p_value": "p",
+      "q_value": "q (FDR)",
+      "hedges_g": "Hedges' g",
+      "std_error": "SE",
+      "estimated_range_mm": "Range (mm)",
+      "mean_t": "Mean |t|",
+      "max_abs_t": "Max |t|",
+      "mean_hedges_g": "Mean |g|",
+      "max_abs_hedges_g": "Max |g|",
+      "n_nominal_sig": "N sig. (uncorr.)",
+      "n_vertices": "N Vertices",
+      "cluster_stat": "Cluster Stat",
+      "peak_t": "Peak t",
+      "p_corrected": "p (corrected)",
+      "cluster_id": "Cluster",
+      "vertex_idx": "Vertex",
+      "conn_metric": "Connectivity",
+      "graph_metric": "Graph Metric",
+      "p_fdr": "p (FDR)",
+      "emmean_a": "EMM (A)",
+      "emmean_b": "EMM (B)",
+      "mean_a": "Mean (A)",
+      "mean_b": "Mean (B)",
+      "sd_a": "SD (A)",
+      "sd_b": "SD (B)",
+      "t_stat": "t",
+      "observed_diff": "Diff",
+    };
+
+    var lower = h.toLowerCase();
+    if (renames[lower]) return renames[lower];
+
+    // Default: apply formatName
+    return formatName(h);
+  }
+
+  /**
+   * Format a cell value for display.
+   */
+  function formatCellValue(value, header) {
+    if (value === null || value === undefined || value === "") {
+      return '<span style="color:var(--text-muted)">—</span>';
+    }
+
+    var str = String(value).replace(/^"|"$/g, ""); // strip quotes
+    var headerLower = header.toLowerCase().replace(/^"|"$/g, "");
+
+    // Format contrast names: "30mgkg_vs_Vehicle" → "AUT00206 (30 mg/kg) vs Vehicle"
+    if (headerLower === "contrast") {
+      return escapeHtml(formatContrast(str));
+    }
+
+    // Format group names
+    if (headerLower === "group_a" || headerLower === "group_b" || headerLower === "group") {
+      return escapeHtml(formatGroupName(str));
+    }
+
+    // Format measure names (e.g. "itc_40hz" → "ITC 40 Hz")
+    if (headerLower === "measure" || headerLower === "dv" || headerLower === "measure_type") {
+      return escapeHtml(formatMeasureName(str));
+    }
+
+    // Format band names
+    if (headerLower === "band") {
+      return escapeHtml(formatName(str));
+    }
+
+    // Format metric names
+    if (headerLower === "metric" || headerLower === "graph_metric" || headerLower === "conn_metric") {
+      return escapeHtml(formatName(str));
+    }
+
+    // Boolean display
+    if (headerLower === "significant" || headerLower === "group_significant" || headerLower === "interaction_significant") {
+      var upper = str.toUpperCase();
+      if (upper === "TRUE") return '<strong style="color:#4CAF50">Yes</strong>';
+      if (upper === "FALSE") return '<span style="color:var(--text-muted)">No</span>';
+    }
+
+    // Numeric formatting
+    var num = parseFloat(str);
+    if (!isNaN(num) && isFinite(num) && str.match(/^-?\d*\.?\d+(?:e[+-]?\d+)?$/i)) {
+      return escapeHtml(formatNumber(num, headerLower));
+    }
+
+    return escapeHtml(str);
+  }
+
+  /**
+   * Format a contrast string for display.
+   * "30mgkg_vs_Vehicle" → "AUT00206 (30 mg/kg) vs Vehicle"
+   */
+  function formatContrast(str) {
+    var parts = str.split("_vs_");
+    if (parts.length === 2) {
+      return formatGroupName(parts[0]) + " vs " + formatGroupName(parts[1]);
+    }
+    return formatName(str);
+  }
+
+  /**
+   * Format a group name for display.
+   */
+  function formatGroupName(name) {
+    var lower = name.toLowerCase();
+    if (GROUP_LABELS[lower]) return GROUP_LABELS[lower];
+    return name;
+  }
+
+  /**
+   * Format measure names like "itc_40hz" → "ITC 40 Hz", "stp_onset" → "STP Onset"
+   */
+  function formatMeasureName(str) {
+    // Split on underscores and format each part
+    return str.split("_").map(function (part) {
+      var lower = part.toLowerCase();
+      if (ACRONYMS[lower]) return ACRONYMS[lower];
+      var hzMatch = lower.match(/^(\d+)(hz)$/);
+      if (hzMatch) return hzMatch[1] + " Hz";
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    }).join(" ");
+  }
+
+  /**
+   * Format a number based on context (header name).
+   */
+  function formatNumber(num, headerLower) {
+    // p-values: show 3-4 significant digits, scientific notation for very small
+    if (headerLower.match(/^p$|^p_|_p$|p_value|p_corrected|q_value|group_q|interaction_q|p_fdr/)) {
+      if (num < 0.001) return num.toExponential(2);
+      return num.toFixed(4);
+    }
+
+    // F-statistics, t-statistics
+    if (headerLower.match(/^f$|_f$|group_f|roi_f|interaction_f|^t$|t_ratio|t_value|t_stat|peak_t|mean_t|max_abs_t|cluster_stat/)) {
+      return num.toFixed(3);
+    }
+
+    // Effect sizes (hedges_g, etc.)
+    if (headerLower.match(/hedges_g|mean_hedges_g|max_abs_hedges_g|cohen/)) {
+      return num.toFixed(3);
+    }
+
+    // Estimates, means, SEs, coefficients
+    if (headerLower.match(/estimate|coefficient|std_error|^se$|emmean|^mean|^sd/)) {
+      return num.toFixed(4);
+    }
+
+    // Degrees of freedom
+    if (headerLower.match(/^df$/)) {
+      return Math.abs(num - Math.round(num)) < 0.01 ? num.toFixed(0) : num.toFixed(1);
+    }
+
+    // AIC/BIC
+    if (headerLower.match(/^aic|^bic/)) {
+      return num.toFixed(1);
+    }
+
+    // Integers (counts)
+    if (headerLower.match(/^n$|^n_|n_edges|n_vertices|n_rois|n_regions|n_nominal|n_sig|cluster_id|vertex_idx|n_permutations/)) {
+      return Math.abs(num - Math.round(num)) < 0.01 ? num.toFixed(0) : num.toFixed(2);
+    }
+
+    // Default: 4 significant figures
+    if (Math.abs(num) >= 100) return num.toFixed(1);
+    if (Math.abs(num) >= 1) return num.toFixed(3);
+    if (Math.abs(num) >= 0.001) return num.toFixed(4);
+    return num.toExponential(2);
+  }
+
+  /**
+   * Format table filename for display.
+   * "evoked_omnibus.csv" → "Evoked Omnibus"
+   */
+  function formatTableFilename(filename) {
+    var name = filename.replace(/\.csv$/i, "");
+    return formatName(name);
   }
 
   function initTableSort() {
