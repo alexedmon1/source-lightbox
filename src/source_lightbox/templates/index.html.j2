@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+  <link rel="stylesheet" href="assets/css/glightbox.min.css">
+  <script>window.MANIFEST = {{ manifest_json | safe }};</script>
+</head>
+<body>
+  <nav id="sidebar">
+    <div class="sidebar-header">
+      <h1 id="gallery-title">Gallery</h1>
+      <input type="search" id="search-input" placeholder="Search..." autocomplete="off">
+    </div>
+    <div id="sidebar-nav"></div>
+    <div class="sidebar-footer">
+      <button id="theme-toggle" title="Toggle theme">
+        <span class="theme-icon-light">&#9788;</span>
+        <span class="theme-icon-dark">&#9790;</span>
+      </button>
+    </div>
+  </nav>
+
+  <main id="content">
+    <div id="breadcrumb"></div>
+    <div id="source-selector"></div>
+    <div id="figures-section"></div>
+    <div id="tables-section"></div>
+    <div id="summary-section"></div>
+  </main>
+
+  <script src="assets/js/glightbox.min.js"></script>
+  <script src="assets/js/tablesort.min.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
