@@ -356,6 +356,26 @@ main {
   border-left: 3px solid var(--highlight-border);
 }
 
+.table-container tr.group-header-primary td {
+  background: var(--table-header-bg);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 10px 10px 6px;
+  border-bottom: 2px solid var(--accent-color);
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+
+.table-container tr.group-header-secondary td {
+  background: var(--bg-secondary);
+  font-weight: 600;
+  font-size: 12px;
+  padding: 6px 10px 4px 20px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
 /* === Summary === */
 .summary-content {
   background: var(--bg-card);

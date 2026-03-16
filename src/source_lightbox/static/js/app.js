@@ -577,10 +577,28 @@
     // Determine which columns to hide (diagnostic/model-fit columns)
     var hideCols = computeHiddenColumns(headers);
 
-    // Format headers for display
+    // Find grouping columns
+    var groupCols = findGroupingColumns(headers);
+    var visibleCount = hideCols.filter(function (h) { return !h; }).length;
+
+    // Sort rows by grouping columns for clean visual grouping
+    if (groupCols.length > 0) {
+      rows = rows.slice().sort(function (a, b) {
+        for (var gc of groupCols) {
+          var va = (a[gc.idx] || "").toString().toLowerCase().replace(/^"|"$/g, "");
+          var vb = (b[gc.idx] || "").toString().toLowerCase().replace(/^"|"$/g, "");
+          if (va < vb) return -1;
+          if (va > vb) return 1;
+        }
+        return 0;
+      });
+    }
+
+    // Build table header — hide grouped columns since they appear as sub-headers
+    var groupColIndices = groupCols.map(function (gc) { return gc.idx; });
     var html = "<table><thead><tr>";
     for (var ci = 0; ci < headers.length; ci++) {
-      if (hideCols[ci]) continue;
+      if (hideCols[ci] || groupColIndices.indexOf(ci) >= 0) continue;
       html += '<th>' + escapeHtml(formatColumnHeader(headers[ci])) + '<span class="sort-indicator"></span></th>';
     }
     html += "</tr></thead><tbody>";
@@ -589,11 +607,39 @@
       return h.toLowerCase() === "significant";
     });
 
-    for (var row of rows) {
+    // Count visible, non-grouped columns for colspan
+    var dataColCount = 0;
+    for (var ci = 0; ci < headers.length; ci++) {
+      if (!hideCols[ci] && groupColIndices.indexOf(ci) < 0) dataColCount++;
+    }
+
+    // Track current group values for sub-header insertion
+    var currentGroups = groupCols.map(function () { return null; });
+
+    for (var ri = 0; ri < rows.length; ri++) {
+      var row = rows[ri];
+
+      // Insert group sub-headers when values change
+      for (var gi = 0; gi < groupCols.length; gi++) {
+        var gc = groupCols[gi];
+        var val = (row[gc.idx] || "").toString().replace(/^"|"$/g, "");
+        if (val !== currentGroups[gi]) {
+          currentGroups[gi] = val;
+          // Reset child group values when parent changes
+          for (var gi2 = gi + 1; gi2 < groupCols.length; gi2++) {
+            currentGroups[gi2] = null;
+          }
+          var formattedVal = gc.formatter(val);
+          var level = gi === 0 ? "group-header-primary" : "group-header-secondary";
+          html += '<tr class="' + level + '"><td colspan="' + dataColCount + '">' +
+            escapeHtml(gc.label + ": " + formattedVal) + '</td></tr>';
+        }
+      }
+
       var isSig = sigIdx >= 0 && row[sigIdx] && row[sigIdx].toUpperCase() === "TRUE";
       html += '<tr' + (isSig ? ' class="significant"' : '') + '>';
       for (var ci = 0; ci < row.length; ci++) {
-        if (hideCols[ci]) continue;
+        if (hideCols[ci] || groupColIndices.indexOf(ci) >= 0) continue;
         html += '<td>' + formatCellValue(row[ci], headers[ci]) + '</td>';
       }
       html += "</tr>";
@@ -604,11 +650,46 @@
         rows.length + ' of ' + tbl.total_rows + ' rows</p>';
     }
     container.innerHTML = html;
+  }
 
-    var table = container.querySelector("table");
-    if (table && window.Tablesort) {
-      new Tablesort(table);
+  /**
+   * Find columns to use for grouping, in priority order.
+   * Returns array of {idx, label, formatter} objects.
+   */
+  function findGroupingColumns(headers) {
+    var lowerHeaders = headers.map(function (h) { return h.toLowerCase().replace(/^"|"$/g, ""); });
+    var groups = [];
+    var rowCount = 0; // we don't have row count here, but grouping is always useful
+
+    // Primary: contrast
+    var contrastIdx = lowerHeaders.indexOf("contrast");
+    if (contrastIdx >= 0) {
+      groups.push({
+        idx: contrastIdx,
+        label: "Contrast",
+        formatter: formatContrast,
+      });
     }
+
+    // Secondary: measure_type > metric > band (pick the most informative one)
+    var secondaryCandidates = [
+      { names: ["measure_type", "type"], label: "Measure Type", formatter: formatMeasureName },
+      { names: ["dv", "measure"], label: "Measure", formatter: formatMeasureName },
+      { names: ["metric"], label: "Metric", formatter: function (v) { return formatName(v); } },
+      { names: ["band"], label: "Band", formatter: function (v) { return formatName(v); } },
+    ];
+
+    for (var cand of secondaryCandidates) {
+      for (var name of cand.names) {
+        var idx = lowerHeaders.indexOf(name);
+        if (idx >= 0 && idx !== contrastIdx) {
+          groups.push({ idx: idx, label: cand.label, formatter: cand.formatter });
+          return groups; // Only use first matching secondary
+        }
+      }
+    }
+
+    return groups;
   }
 
   /**
