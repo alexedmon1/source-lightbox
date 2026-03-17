@@ -27,6 +27,12 @@ def main():
 
 @main.command()
 @click.option(
+    "--config",
+    "config_file",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Unified study.yaml — auto-populates --localization, --results, --analytics from paths section.",
+)
+@click.option(
     "--localization",
     "localizations",
     multiple=True,
@@ -54,16 +60,17 @@ def main():
 @click.option(
     "--output",
     "-o",
-    required=True,
     type=click.Path(),
+    default=None,
     help="Output gallery directory.",
 )
-@click.option("--title", default="Source Analysis Gallery", help="Gallery title.")
+@click.option("--title", default=None, help="Gallery title.")
 @click.option("--thumb-size", default=300, type=int, help="Thumbnail max dimension.")
 @click.option("--thumb-quality", default=80, type=int, help="Thumbnail JPEG quality.")
 @click.option("--thumb-workers", default=4, type=int, help="Parallel thumbnail workers.")
 @click.option("--verbose/--quiet", default=True, help="Verbose output.")
 def build(
+    config_file,
     localizations,
     results_dirs,
     labels,
@@ -76,6 +83,45 @@ def build(
     verbose,
 ):
     """Build a static gallery from analysis outputs."""
+    import yaml as _yaml
+
+    # If --config provided, read paths from unified study.yaml
+    if config_file is not None:
+        config_path = Path(config_file).resolve()
+        config_dir = config_path.parent
+        with open(config_path) as f:
+            study_cfg = _yaml.safe_load(f)
+
+        paths = study_cfg.get("paths", {})
+
+        def _resolve(p: str, default: str) -> str:
+            raw = p or default
+            pp = Path(raw)
+            resolved = pp if pp.is_absolute() else (config_dir / pp).resolve()
+            return str(resolved)
+
+        cfg_loc = _resolve(paths.get("localization"), "./localization")
+        cfg_results = _resolve(paths.get("results"), "./results")
+        cfg_analytics = _resolve(paths.get("analytics"), "./analytics")
+
+        # Merge: CLI flags take precedence over config
+        if not localizations:
+            localizations = (cfg_loc,) if Path(cfg_loc).is_dir() else ()
+        if not results_dirs:
+            results_dirs = (cfg_results,) if Path(cfg_results).is_dir() else ()
+        if analytics is None and Path(cfg_analytics).is_dir():
+            analytics = cfg_analytics
+        if title is None:
+            title = study_cfg.get("name", "Source Analysis Gallery")
+        if output is None:
+            output = _resolve(paths.get("gallery"), "./gallery")
+
+    if title is None:
+        title = "Source Analysis Gallery"
+    if output is None:
+        click.echo("Error: --output is required (or provide --config with paths.gallery).", err=True)
+        sys.exit(1)
+
     # Parse paired inputs with labels
     # Labels are assigned in order to the combined list of localizations + results
     all_inputs = []
