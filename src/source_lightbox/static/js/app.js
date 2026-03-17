@@ -7,7 +7,7 @@
 
   /* ── Acronym map for display formatting ── */
   const ACRONYMS = {
-    "psd": "PSD", "pac": "PAC", "mvpa": "MVPA", "roi": "ROI", "lmm": "LMM",
+    "psd": "PSD", "pac": "PAC", "mvpa": "MVPA", "roi": "ROI", "vertex": "Vertex", "lmm": "LMM",
     "itc": "ITC", "ersp": "ERSP", "stp": "STP", "svm": "SVM", "nbs": "NBS",
     "assr": "ASSR", "qc": "QC", "eeg": "EEG", "ica": "ICA", "falff": "fALFF",
     "fdr": "FDR", "aic": "AIC", "bic": "BIC", "se": "SE", "df": "df",

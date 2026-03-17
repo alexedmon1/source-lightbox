@@ -44,15 +44,15 @@ def tmp_localization(tmp_path):
 def tmp_results(tmp_path):
     """Create a mock results directory structure."""
     # Figures
-    fig_dir = tmp_path / "figures" / "resting" / "psd"
+    fig_dir = tmp_path / "figures" / "resting" / "roi_psd"
     fig_dir.mkdir(parents=True)
-    (fig_dir / "psd_global.png").write_bytes(b"PNG")
-    (fig_dir / "psd_regional.png").write_bytes(b"PNG")
+    (fig_dir / "roi_psd_global.png").write_bytes(b"PNG")
+    (fig_dir / "roi_psd_regional.png").write_bytes(b"PNG")
 
     # Tables
-    tbl_dir = tmp_path / "tables" / "resting" / "psd"
+    tbl_dir = tmp_path / "tables" / "resting" / "roi_psd"
     tbl_dir.mkdir(parents=True)
-    (tbl_dir / "psd_omnibus.csv").write_text("group_a,group_b,p\n30mgkg,Vehicle,0.05\n")
+    (tbl_dir / "roi_psd_omnibus.csv").write_text("group_a,group_b,p\n30mgkg,Vehicle,0.05\n")
 
     return tmp_path
 
@@ -60,11 +60,11 @@ def tmp_results(tmp_path):
 @pytest.fixture
 def tmp_analytics(tmp_path):
     """Create a mock analytics directory structure."""
-    summary_dir = tmp_path / "resting" / "psd"
+    summary_dir = tmp_path / "resting" / "roi_psd"
     summary_dir.mkdir(parents=True)
     (summary_dir / "ANALYSIS_SUMMARY.md").write_text("# PSD Analysis\nDone.")
 
-    summary_dir2 = tmp_path / "chirp" / "evoked"
+    summary_dir2 = tmp_path / "chirp" / "roi_evoked"
     summary_dir2.mkdir(parents=True)
     (summary_dir2 / "ANALYSIS_SUMMARY.md").write_text("# Chirp Evoked\nDone.")
 
@@ -100,10 +100,10 @@ def test_results_scanner(tmp_results):
 
     assert len(result.figures) == 2
     assert result.figures[0].paradigm == "resting"
-    assert result.figures[0].analysis == "psd"
+    assert result.figures[0].analysis == "roi_psd"
 
     assert len(result.tables) == 1
-    assert result.tables[0].filename == "psd_omnibus.csv"
+    assert result.tables[0].filename == "roi_psd_omnibus.csv"
 
 
 def test_analytics_scanner(tmp_analytics):
