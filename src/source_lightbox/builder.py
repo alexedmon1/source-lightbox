@@ -131,6 +131,7 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
     manifest = build_manifest(
         scan, config.title, max_table_rows=config.max_table_rows,
         contrast_labels=config.contrast_labels,
+        contrast_groups=config.contrast_groups,
     )
     manifest_json = json.dumps(manifest, indent=2)
     data_dir = out / "data"

@@ -50,8 +50,15 @@ convention. The lightbox renders figures at build time:
 
 `ANALYSIS_SUMMARY.md` is a full stats report, not a summary — it is **not**
 embedded. Instead `summarize.py` derives a concise "significant results by
-contrast" digest from the module's effect-size table (grouped by contrast,
-direction arrows, FDR q<0.05).
+contrast" digest from the module's effect-size table (per-contrast chips with
+direction arrows, FDR q<0.05). The per-contrast category axis is band/freq_pair,
+falling back to `dv` when band is the aperiodic `NA` placeholder.
+
+The digest is **organized into tier sections** when the YAML gives each contrast
+a `group:` (e.g. Disease effect / Treatment rescue / Normalization to WT / Route
+& dose). Sections follow the group's first-seen YAML order; contrasts without a
+group fall into "Other". No groups → flat per-contrast list. Threaded the same
+way as `contrast_labels` (cli → BuildConfig → manifest → summarize).
 
 ## Presentation
 

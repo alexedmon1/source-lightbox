@@ -56,13 +56,17 @@ def _category_column(headers: list[str], records: list[dict]) -> str | None:
     return None
 
 
-def build_significance_summary(tables: list[dict], contrast_labels: dict | None = None) -> str | None:
+def build_significance_summary(tables: list[dict], contrast_labels: dict | None = None,
+                               contrast_groups: dict | None = None) -> str | None:
     """Return concise HTML summarizing significant effects by contrast, or None.
 
     ``tables`` are embedded table dicts: ``{filename, headers, rows}``.
     ``contrast_labels`` maps raw contrast names to readable labels for display.
+    ``contrast_groups`` maps contrast names to a tier/group label; when given, the
+    digest is organized into sections in the group's first-seen (YAML) order.
     """
     labels = contrast_labels or {}
+    groups = contrast_groups or {}
 
     def _label(name):
         return labels.get(name, name)
@@ -91,7 +95,8 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
             "</p></div>"
         )
 
-    items_html = []
+    # Build one list item per significant contrast (keyed for later grouping).
+    item_by_contrast: dict[str, str] = {}
     n_findings = 0
     for contrast in all_contrasts:
         rows = sig_by_contrast.get(contrast)
@@ -111,11 +116,34 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
                 f'{band}{facet} <span class="g">g={abs(g):.2f}</span></span>'
             )
             n_findings += 1
-        items_html.append(
+        item_by_contrast[contrast] = (
             f'<li><span class="sig-contrast">{escape(str(_label(contrast)))}</span> '
             + "".join(chips)
             + "</li>"
         )
+
+    def _ul(contrasts):
+        return '<ul class="sig-list">' + "".join(item_by_contrast[c] for c in contrasts) + "</ul>"
+
+    # Body: grouped into tier sections (YAML order) when groups are provided.
+    body = ""
+    if groups:
+        group_order = []
+        for g in groups.values():
+            if g and g not in group_order:
+                group_order.append(g)
+        rendered = set()
+        for grp in group_order:
+            members = [c for c in all_contrasts if c in item_by_contrast and groups.get(c) == grp]
+            if not members:
+                continue
+            body += '<h4 class="sig-group">' + escape(grp) + "</h4>" + _ul(members)
+            rendered.update(members)
+        leftover = [c for c in all_contrasts if c in item_by_contrast and c not in rendered]
+        if leftover:
+            body += '<h4 class="sig-group">Other</h4>' + _ul(leftover)
+    else:
+        body = _ul([c for c in all_contrasts if c in item_by_contrast])
 
     null_contrasts = [c for c in all_contrasts if c not in sig_by_contrast]
 
@@ -126,7 +154,7 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
         "(FDR q &lt; 0.05). <span class=\"sig-key\">&#9650; first group higher, "
         "&#9660; lower</span>.</p>"
     )
-    html += '<ul class="sig-list">' + "".join(items_html) + "</ul>"
+    html += body
     if null_contrasts:
         html += (
             '<p class="sig-none">No significant effects: '

@@ -626,6 +626,18 @@ main {
   font-size: 12px;
 }
 
+.sig-group {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent-color);
+  margin: 18px 0 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-color);
+}
+.sig-group:first-child { margin-top: 4px; }
+
 .sig-list {
   list-style: none;
   margin: 0;

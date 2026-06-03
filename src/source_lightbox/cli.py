@@ -114,8 +114,9 @@ def build(
     config_res_inputs = []
     # Study contrasts that drive brain-mosaic rendering (read from --config).
     contrasts = None
-    # Contrast name -> readable label (read from --config).
+    # Contrast name -> readable label / tier group (read from --config).
     contrast_labels = None
+    contrast_groups = None
 
     # If --config provided, read paths from unified study.yaml
     if config_file is not None:
@@ -178,6 +179,8 @@ def build(
             contrasts = [c["name"] for c in study_contrasts] or None
         if contrast_labels is None:
             contrast_labels = {c["name"]: c["label"] for c in study_contrasts if c.get("label")} or None
+        if contrast_groups is None:
+            contrast_groups = {c["name"]: c["group"] for c in study_contrasts if c.get("group")} or None
         # ROI categories YAML: explicit path, else conventional file beside config.
         if roi_categories is None:
             cfg_cats = paths.get("roi_categories")
@@ -245,6 +248,7 @@ def build(
         roi_categories=roi_categories,
         contrasts=contrasts,
         contrast_labels=contrast_labels,
+        contrast_groups=contrast_groups,
     )
 
     from .builder import build as do_build

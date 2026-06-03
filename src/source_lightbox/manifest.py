@@ -23,7 +23,8 @@ def _read_csv(path: Path) -> dict:
 
 
 def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
-                   contrast_labels: dict | None = None) -> dict:
+                   contrast_labels: dict | None = None,
+                   contrast_groups: dict | None = None) -> dict:
     """Build the manifest dictionary from aggregated scan results.
 
     Tables are embedded as parsed CSV data and summaries as rendered HTML,
@@ -114,7 +115,8 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
             module_tables = []
             for src_tables in entry["tables"].values():
                 module_tables.extend(src_tables)
-            summary_html = build_significance_summary(module_tables, contrast_labels=contrast_labels)
+            summary_html = build_significance_summary(
+                module_tables, contrast_labels=contrast_labels, contrast_groups=contrast_groups)
             entry["summary"] = summary_html
             if summary_html:
                 n_summaries += 1

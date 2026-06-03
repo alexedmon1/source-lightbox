@@ -40,6 +40,33 @@ def test_digest_prefers_global_over_roi_detail():
     assert html is not None and "Motor_R" not in html
 
 
+def test_grouped_into_tiers():
+    tbl = _tbl(
+        "roi_psd_posthoc_global.csv",
+        "contrast,band,hedges_g,significant",
+        [
+            "disease_effect,Low Gamma,1.6,TRUE",
+            "hd_icv_vs_wt,Low Gamma,3.5,TRUE",
+            "ld_vs_wt,Low Gamma,3.5,TRUE",
+        ],
+    )
+    groups = {"disease_effect": "Disease effect",
+              "hd_icv_vs_wt": "Normalization to WT",
+              "ld_vs_wt": "Normalization to WT"}
+    html = build_significance_summary([tbl], contrast_groups=groups)
+    assert html is not None
+    # one section header per distinct group, in YAML order
+    assert html.index("Disease effect") < html.index("Normalization to WT")
+    assert html.count('class="sig-group"') == 2
+
+
+def test_no_groups_stays_flat():
+    tbl = _tbl("x_global.csv", "contrast,band,hedges_g,significant",
+              ["disease_effect,Low Gamma,1.6,TRUE"])
+    html = build_significance_summary([tbl])  # no contrast_groups
+    assert 'class="sig-group"' not in html
+
+
 def test_no_effect_size_table_returns_none():
     tbl = _tbl("roi_psd_omnibus.csv", "contrast,band,group_F,group_p",
               ["disease_effect,Alpha,0.2,0.6"])

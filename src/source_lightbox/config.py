@@ -38,6 +38,7 @@ class BuildConfig:
     roi_categories: str | None = None     # YAML with top-level roi_categories:
     contrasts: list[str] | None = None    # study contrasts to render (None = all)
     contrast_labels: dict | None = None   # contrast name -> readable label
+    contrast_groups: dict | None = None   # contrast name -> tier/group label
     brain_power_type: str = "relative"    # power_type filter for ROI mosaics
 
     def __post_init__(self):
