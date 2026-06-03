@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FORGE — Source Analysis Galleries</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 15px/1.6 system-ui, sans-serif; margin: 0; background: #f5f5f7; color: #1d1d1f; }
+    @media (prefers-color-scheme: dark) { body { background: #16213e; color: #e0e0e8; } .card { background: #1e1e3a !important; border-color: #2d2d4d !important; } a.card:hover { background: #2a2a4a !important; } }
+    .wrap { max-width: 760px; margin: 8vh auto; padding: 0 24px; }
+    h1 { font-size: 24px; margin: 0 0 6px; }
+    p.sub { color: #6e6e73; margin: 0 0 28px; }
+    .cards { display: grid; gap: 14px; }
+    a.card { display: block; text-decoration: none; color: inherit; background: #fff; border: 1px solid #d2d2d7; border-radius: 10px; padding: 18px 20px; transition: background .15s; }
+    a.card:hover { background: #eef; }
+    .card h2 { margin: 0 0 4px; font-size: 17px; color: #5856d6; }
+    .card span { color: #6e6e73; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>FORGE — Source Analysis Galleries</h1>
+    <p class="sub">EEG source localization &amp; connectivity, Fmr1 KO vs WT.</p>
+    <div class="cards">
+      <a class="card" href="/ms2/">
+        <h2>Manuscript 2 — Treatment study</h2>
+        <span>All five treatment groups · ROI + vertex analytics · per-subject QC</span>
+      </a>
+      <a class="card" href="/ms1/">
+        <h2>Manuscript 1 — KO vs WT</h2>
+        <span>Disease effect · KO Vehicle vs WT Vehicle</span>
+      </a>
+    </div>
+  </div>
+</body>
+</html>

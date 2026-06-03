@@ -20,7 +20,7 @@ source-lightbox build \
   --output ./gallery \
   --title "My Study"
 
-# Serve locally
+# Serve locally (preview; for persistent hosting see DEPLOY.md)
 source-lightbox serve ./gallery --port 5500
 
 # Print stats
