@@ -303,8 +303,11 @@ main {
 }
 .figure-row img {
   display: block;
-  width: 100%;
+  max-width: 100%;
+  max-height: 78vh;     /* cap tall/square figures (e.g. circos) by viewport */
+  width: auto;
   height: auto;
+  margin: 0 auto;       /* center when narrower than the container */
   border-radius: 4px;
   background: #fff;
 }
