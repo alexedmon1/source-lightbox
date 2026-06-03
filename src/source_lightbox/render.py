@@ -458,12 +458,29 @@ def _table_priority(filename: str) -> int:
     return 30
 
 
-def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k: None):
-    """Render exactly one overview figure per analysis module.
+def _roi_posthoc_table(group):
+    """The per-ROI posthoc table in a module group, if present (for brain mosaics)."""
+    for tbl in group:
+        if "posthoc_roi" in tbl.filename.lower():
+            return tbl
+    return None
 
-    Tables are grouped by ``(source_label, paradigm, analysis)``. Within each
-    group the highest-priority *renderable* table is chosen and rendered once in
-    overview mode.
+
+def _analysis_key(analysis: str) -> str:
+    """Strip a leading ``roi_`` so 'roi_psd' -> 'psd' for ANALYSIS_CMAPS lookup."""
+    return analysis[4:] if analysis.startswith("roi_") else analysis
+
+
+def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k: None,
+                         brain=None, contrast_labels=None):
+    """Render figures per analysis module.
+
+    Tables are grouped by ``(source_label, paradigm, analysis)``. For ROI modules
+    with a per-ROI posthoc table, anatomy-aware brain mosaics are rendered (when
+    ``brain`` is configured and source-analytics is available); otherwise the
+    module gets a single flat overview figure from its highest-priority table.
+
+    ``brain`` is an optional dict: ``{categories, contrasts, python, power_type}``.
 
     Returns a list of :class:`~source_lightbox.scanner.FigureEntry`
     (category ``"analytics"``).
@@ -475,8 +492,46 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
     for tbl in tables:
         modules.setdefault((tbl.source_label, tbl.paradigm, tbl.analysis), []).append(tbl)
 
+    # Brain mosaics are optional and require source-analytics.
+    brain_ok = False
+    if brain and brain.get("categories"):
+        from . import brain_mosaic
+
+        brain_ok = brain_mosaic.brain_available(brain.get("python"))
+        if not brain_ok:
+            log("  (brain mosaics unavailable — source-analytics not found; using heatmaps)")
+
     figures: list[FigureEntry] = []
     for (source, paradigm, analysis), group in modules.items():
+        dest = staging / _slugify(source) / paradigm / analysis
+
+        # 1. Brain mosaics for ROI posthoc modules (replace the flat overview).
+        if brain_ok:
+            roi_tbl = _roi_posthoc_table(group)
+            if roi_tbl is not None:
+                dest.mkdir(parents=True, exist_ok=True)
+                paths = brain_mosaic.render_roi_mosaics(
+                    roi_tbl.src_path,
+                    categories=brain["categories"],
+                    out_dir=dest,
+                    analysis_name=_analysis_key(analysis),
+                    contrasts=brain.get("contrasts"),
+                    labels=brain.get("labels"),
+                    power_type=brain.get("power_type", "relative"),
+                    python_path=brain.get("python"),
+                    log=log,
+                )
+                if paths:
+                    for path in paths:
+                        figures.append(
+                            FigureEntry(
+                                src_path=path, category="analytics", source_label=source,
+                                paradigm=paradigm, analysis=analysis, filename=path.name,
+                            )
+                        )
+                    continue  # mosaics stand in for this module's overview
+
+        # 2. Flat overview heatmap from the highest-priority renderable table.
         ranked = sorted(group, key=lambda t: _table_priority(t.filename), reverse=True)
 
         chosen = None
@@ -495,7 +550,10 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
         tbl, data = chosen
         renderer = select_renderer(data["headers"])
         records = _records(data["headers"], data["rows"])
-        dest = staging / _slugify(source) / paradigm / analysis
+        if contrast_labels:
+            for rec in records:
+                if rec.get("contrast") in contrast_labels:
+                    rec["contrast"] = contrast_labels[rec["contrast"]]
         dest.mkdir(parents=True, exist_ok=True)
         stem = Path(tbl.filename).stem
         try:

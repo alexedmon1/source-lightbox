@@ -10,9 +10,13 @@ from source_lightbox.scanner import FigureEntry, ScanResult, SummaryEntry, Table
 
 @pytest.fixture
 def tmp_csv(tmp_path):
-    """Create a temporary CSV file."""
-    csv = tmp_path / "test.csv"
-    csv.write_text("group_a,group_b,p,significant\n30mgkg,Vehicle,0.05,TRUE\n6mgkg,Vehicle,0.10,FALSE\n")
+    """Create a temporary effect-size CSV (drives the significance digest)."""
+    csv = tmp_path / "psd_posthoc_global.csv"
+    csv.write_text(
+        "contrast,band,hedges_g,significant\n"
+        "disease_effect,Low Gamma,1.20,TRUE\n"
+        "disease_effect,Delta,-0.30,FALSE\n"
+    )
     return csv
 
 
@@ -42,7 +46,7 @@ def test_build_manifest_basic(tmp_csv, tmp_summary):
             source_label="Allen ROI",
             paradigm="resting",
             analysis="psd",
-            filename="psd_omnibus.csv",
+            filename="psd_posthoc_global.csv",
         )
     )
     scan.summaries.append(
@@ -70,13 +74,14 @@ def test_build_manifest_basic(tmp_csv, tmp_summary):
 
     # Tables are now inline with headers + rows
     tbl = psd["tables"]["Allen ROI"][0]
-    assert tbl["filename"] == "psd_omnibus.csv"
-    assert tbl["headers"] == ["group_a", "group_b", "p", "significant"]
+    assert tbl["filename"] == "psd_posthoc_global.csv"
+    assert tbl["headers"] == ["contrast", "band", "hedges_g", "significant"]
     assert len(tbl["rows"]) == 2
-    assert tbl["rows"][0] == ["30mgkg", "Vehicle", "0.05", "TRUE"]
+    assert tbl["rows"][0] == ["disease_effect", "Low Gamma", "1.20", "TRUE"]
 
-    # Summary is now inline HTML
-    assert "<strong>" in psd["summary"] or "<h1>" in psd["summary"]
+    # Summary is now a generated significance digest (not the verbatim md)
+    assert "sig-summary" in psd["summary"]
+    assert "disease_effect" in psd["summary"]
 
 
 def test_build_manifest_multi_source(tmp_csv):

@@ -270,46 +270,79 @@
   function renderAnalysisContent(paradigm, analysis, data, source, allSources) {
     var html = '<h2 class="section-header">' + formatName(paradigm) + ' — ' + formatName(analysis) + '</h2>';
 
-    // Summary — at the top
-    if (data.summary) {
-      html += '<div class="summary-content">' + data.summary + '</div>';
-    }
-
-    // Comparison mode
+    // Build each section's panel HTML separately, then expose them as tabs so a
+    // single analysis page isn't one long scroll of figures + tables + summary.
     var sourcesWithFigs = allSources.filter(function (s) { return data.figures[s] && data.figures[s].length > 0; });
-
+    var figs = (data.figures[source] || []);
+    var figCount = figs.length;
+    var figPanel = "";
     if (sourcesWithFigs.length > 1 && source === "__compare__") {
-      html += renderComparisonGrid(data, sourcesWithFigs);
-    } else {
-      // Figures
-      var figs = (data.figures[source] || []);
-      if (figs.length > 0) {
-        html += '<h3 class="section-header" style="font-size:15px">Figures</h3>';
-        html += renderFigureGrid(figs, PAGE_SIZE);
-      }
+      figPanel = renderComparisonGrid(data, sourcesWithFigs);
+      figCount = sourcesWithFigs.reduce(function (n, s) { return n + data.figures[s].length; }, 0);
+    } else if (figs.length > 0) {
+      figPanel = renderFigureGrid(figs, PAGE_SIZE);
     }
 
-    // Tables
     var tableSource = data.tables[source] ? source : Object.keys(data.tables)[0];
     var tables = data.tables[tableSource] || [];
+    var tablePanel = "";
     if (tables.length > 0) {
-      html += '<h3 class="section-header" style="font-size:15px">Tables</h3>';
-      html += '<div class="tables-section">';
+      tablePanel = '<div class="tables-section">';
       for (var ti = 0; ti < tables.length; ti++) {
         var tbl = tables[ti];
         var id = "tbl-" + ti + "-" + tbl.filename.replace(/[^a-z0-9]/gi, "_");
         var displayName = formatTableFilename(tbl.filename);
-        html += '<button class="table-toggle" data-table-idx="' + ti + '" data-table-id="' + id + '">';
-        html += '<span class="arrow">&#9654;</span> ' + displayName;
-        html += "</button>";
-        html += '<div id="' + id + '" class="table-container" style="display:none"></div>';
+        tablePanel += '<button class="table-toggle" data-table-idx="' + ti + '" data-table-id="' + id + '">';
+        tablePanel += '<span class="arrow">&#9654;</span> ' + displayName;
+        tablePanel += "</button>";
+        tablePanel += '<div id="' + id + '" class="table-container" style="display:none"></div>';
       }
+      tablePanel += "</div>";
+    }
+
+    // Concise 'significant results by contrast' digest (generated from tables).
+    var summaryPanel = data.summary ? '<div class="summary-content">' + data.summary + '</div>' : "";
+
+    // Natural reading order for viewers: summary, then figures, then tables.
+    var tabs = [];
+    if (summaryPanel) tabs.push({ id: "summary", label: "Summary", count: null, html: summaryPanel });
+    if (figPanel) tabs.push({ id: "figures", label: "Figures", count: figCount, html: figPanel });
+    if (tablePanel) tabs.push({ id: "tables", label: "Tables", count: tables.length, html: tablePanel });
+
+    if (tabs.length === 0) {
+      html += '<div class="empty-state"><p>No figures, tables, or summary for this analysis.</p></div>';
+    } else {
+      html += '<div class="tab-bar" role="tablist">';
+      tabs.forEach(function (t, i) {
+        var badge = t.count != null ? ' <span class="tab-count">' + t.count + "</span>" : "";
+        html += '<button class="tab-btn' + (i === 0 ? " active" : "") + '" data-tab="' + t.id + '" role="tab">' +
+          t.label + badge + "</button>";
+      });
       html += "</div>";
+      tabs.forEach(function (t, i) {
+        html += '<div class="tab-panel' + (i === 0 ? " active" : "") + '" data-panel="' + t.id + '">' + t.html + "</div>";
+      });
     }
 
     setContent(html);
     initLightbox();
     bindTableToggles(tables);
+    bindTabs();
+  }
+
+  function bindTabs() {
+    var btns = document.querySelectorAll(".tab-btn");
+    btns.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.getAttribute("data-tab");
+        document.querySelectorAll(".tab-btn").forEach(function (b) {
+          b.classList.toggle("active", b === btn);
+        });
+        document.querySelectorAll(".tab-panel").forEach(function (p) {
+          p.classList.toggle("active", p.getAttribute("data-panel") === id);
+        });
+      });
+    });
   }
 
   /* ── Localization Pages ── */

@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from .markdown_convert import md_to_html
 from .scanner import ScanResult, _slugify, qc_csv_to_json
 
 
@@ -23,7 +22,8 @@ def _read_csv(path: Path) -> dict:
     return {"headers": headers, "rows": rows}
 
 
-def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500) -> dict:
+def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
+                   contrast_labels: dict | None = None) -> dict:
     """Build the manifest dictionary from aggregated scan results.
 
     Tables are embedded as parsed CSV data and summaries as rendered HTML,
@@ -104,13 +104,20 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500) -> d
             tbl_entry["total_rows"] = total_rows
         entry["tables"][source].append(tbl_entry)
 
-    # Summaries — embed converted HTML inline
-    for summary in scan.summaries:
-        paradigm = summary.paradigm
-        analysis = summary.analysis
-        if paradigm in manifest["paradigms"] and analysis in manifest["paradigms"][paradigm]:
-            html = md_to_html(summary.src_path)
-            manifest["paradigms"][paradigm][analysis]["summary"] = html
+    # Summaries — a concise 'significant results by contrast' digest derived from
+    # each module's effect-size table, NOT the verbose ANALYSIS_SUMMARY.md verbatim.
+    from .summarize import build_significance_summary
+
+    n_summaries = 0
+    for paradigm, analyses in manifest["paradigms"].items():
+        for analysis, entry in analyses.items():
+            module_tables = []
+            for src_tables in entry["tables"].values():
+                module_tables.extend(src_tables)
+            summary_html = build_significance_summary(module_tables, contrast_labels=contrast_labels)
+            entry["summary"] = summary_html
+            if summary_html:
+                n_summaries += 1
 
     # Localization entries grouped by source
     for fig in scan.figures:
@@ -154,7 +161,7 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500) -> d
     manifest["stats"] = {
         "total_figures": len(scan.figures),
         "total_tables": len(scan.tables),
-        "total_summaries": len(scan.summaries),
+        "total_summaries": n_summaries,
         "paradigm_count": len(manifest["paradigms"]),
     }
 

@@ -74,6 +74,19 @@ def main():
     help="Render standardized figures from stat tables at build time.",
 )
 @click.option("--figure-dpi", default=150, type=int, help="DPI for rendered figures.")
+@click.option(
+    "--brain/--no-brain",
+    "brain_render",
+    default=True,
+    help="Render anatomy-aware ROI brain mosaics via source-analytics when available.",
+)
+@click.option("--brain-python", default=None, help="Path to the source-analytics venv python.")
+@click.option(
+    "--roi-categories",
+    default=None,
+    type=click.Path(dir_okay=False),
+    help="YAML with a top-level roi_categories: mapping (for brain mosaics).",
+)
 @click.option("--verbose/--quiet", default=True, help="Verbose output.")
 def build(
     config_file,
@@ -88,6 +101,9 @@ def build(
     thumb_workers,
     render_figures,
     figure_dpi,
+    brain_render,
+    brain_python,
+    roi_categories,
     verbose,
 ):
     """Build a static gallery from analysis outputs."""
@@ -95,6 +111,10 @@ def build(
 
     # Labeled localization inputs supplied via --config (CLI flags take precedence).
     config_loc_inputs = []
+    # Study contrasts that drive brain-mosaic rendering (read from --config).
+    contrasts = None
+    # Contrast name -> readable label (read from --config).
+    contrast_labels = None
 
     # If --config provided, read paths from unified study.yaml
     if config_file is not None:
@@ -140,6 +160,26 @@ def build(
             title = study_cfg.get("name", "Source Analysis Gallery")
         if output is None:
             output = _resolve(paths.get("gallery"), "./gallery")
+
+        # Brain mosaics: study contrasts drive which mosaics get rendered.
+        study_contrasts = [c for c in (study_cfg.get("contrasts") or []) if isinstance(c, dict) and c.get("name")]
+        if not contrasts:
+            contrasts = [c["name"] for c in study_contrasts] or None
+        if contrast_labels is None:
+            contrast_labels = {c["name"]: c["label"] for c in study_contrasts if c.get("label")} or None
+        # ROI categories YAML: explicit path, else conventional file beside config.
+        if roi_categories is None:
+            cfg_cats = paths.get("roi_categories")
+            if cfg_cats:
+                roi_categories = _resolve(cfg_cats, "")
+            else:
+                default_cats = config_dir / "allen_roi_categories_proposed.yaml"
+                if default_cats.is_file():
+                    roi_categories = str(default_cats)
+        if brain_python is None:
+            bp = paths.get("source_analytics_python")
+            if bp:
+                brain_python = _resolve(bp, "")
 
     if title is None:
         title = "Source Analysis Gallery"
@@ -187,6 +227,11 @@ def build(
         thumb_workers=thumb_workers,
         render_figures=render_figures,
         figure_dpi=figure_dpi,
+        brain_render=brain_render,
+        brain_python=brain_python,
+        roi_categories=roi_categories,
+        contrasts=contrasts,
+        contrast_labels=contrast_labels,
     )
 
     from .builder import build as do_build

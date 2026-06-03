@@ -75,6 +75,27 @@ the gallery as sortable CSVs. To add a figure type, append a renderer to
 > live under **Localization → Subjects** (one subject at a time) and
 > **Localization → QC**, separate from this overview set.
 
+### Anatomy-aware ROI brain mosaics
+
+For ROI modules that have a per-ROI posthoc table (`*_posthoc_roi.csv`), the
+overview heatmap is replaced by **brain mosaics** — ROI effect sizes painted on
+mouse-brain anatomy across coronal/axial/sagittal views, with an all-ROIs row and
+an FDR-significant row (publication style). These delegate to
+`source_analytics.viz.brain_roi` (with its bundled Allen atlas) via a subprocess
+to the source-analytics venv, so source-lightbox stays lightweight; if that
+interpreter isn't found, the module falls back to the flat heatmap.
+
+Mosaics are curated by the study config: one per **(contrast, band)** where the
+contrast is listed in the study's `contrasts:` and the band has ≥1 FDR-significant
+ROI, for the primary `power_type` (default `relative`). Controlled by:
+
+```
+--config study.yaml         # contrasts come from its `contrasts:` list
+--roi-categories FILE.yaml  # default: allen_roi_categories_proposed.yaml beside the config
+--brain-python PATH         # default: ~/sandbox/source-analytics/.venv/bin/python
+--no-brain                  # disable, use heatmaps everywhere
+```
+
 ### Config-driven build with multiple localizations
 
 The `--config study.yaml` form reads a `paths:` block. For source comparison

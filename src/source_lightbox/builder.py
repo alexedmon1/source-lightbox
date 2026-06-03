@@ -55,8 +55,12 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
         f"{len(scan.summaries)} summaries"
     )
 
-    # 2. Prepare output directory
+    # 2. Prepare output directory. Rendered analytics figures are regenerated
+    #    every build, so clear stale ones (and their thumbnails) to avoid orphans
+    #    from a prior run. Localization figures are stable and kept.
     out.mkdir(parents=True, exist_ok=True)
+    for sub in ("figures/analytics", "figures/thumbs/analytics"):
+        shutil.rmtree(out / sub, ignore_errors=True)
 
     # 2b. Render standardized figures from tables (staged, then treated like any
     #     other discovered figure by the copy/thumbnail/manifest steps below).
@@ -65,8 +69,19 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
         _log("Rendering figures from tables...")
         from .render import render_table_figures
 
+        brain = None
+        if config.brain_render and config.roi_categories:
+            brain = {
+                "categories": config.roi_categories,
+                "contrasts": config.contrasts,
+                "labels": config.contrast_labels,
+                "python": config.brain_python,
+                "power_type": config.brain_power_type,
+            }
+
         rendered = render_table_figures(
-            scan.tables, staging_dir, dpi=config.figure_dpi, log=_log
+            scan.tables, staging_dir, dpi=config.figure_dpi, log=_log,
+            brain=brain, contrast_labels=config.contrast_labels,
         )
         scan.figures.extend(rendered)
         _log(f"  Rendered {len(rendered)} figures from {len(scan.tables)} tables")
@@ -110,7 +125,10 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
 
     # 6. Build manifest (tables + summaries are embedded inline)
     _log("Building manifest...")
-    manifest = build_manifest(scan, config.title, max_table_rows=config.max_table_rows)
+    manifest = build_manifest(
+        scan, config.title, max_table_rows=config.max_table_rows,
+        contrast_labels=config.contrast_labels,
+    )
     manifest_json = json.dumps(manifest, indent=2)
     data_dir = out / "data"
     data_dir.mkdir(parents=True, exist_ok=True)

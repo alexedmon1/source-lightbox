@@ -278,6 +278,66 @@ main {
 }
 
 /* === Tables === */
+/* === Analysis tabs === */
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-color);
+  margin: 20px 0 0;
+  flex-wrap: wrap;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.tab-btn.active {
+  color: var(--accent-color);
+  border-bottom-color: var(--accent-color);
+  font-weight: 600;
+}
+
+.tab-count {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 6px;
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 17px;
+  text-align: center;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border-radius: 9px;
+}
+
+.tab-btn.active .tab-count {
+  color: #fff;
+  background: var(--accent-color);
+}
+
+.tab-panel {
+  display: none;
+  padding-top: 18px;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
 .tables-section {
   margin-bottom: 24px;
 }
@@ -420,6 +480,69 @@ main {
   padding: 2px 5px;
   border-radius: 3px;
   font-size: 12px;
+}
+
+/* === Significant-results digest === */
+.sig-summary .sig-lead {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.sig-summary .sig-key {
+  font-size: 12px;
+}
+
+.sig-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sig-list li {
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border-color);
+  line-height: 1.9;
+}
+
+.sig-list li:last-child {
+  border-bottom: none;
+}
+
+.sig-contrast {
+  display: inline-block;
+  font-weight: 600;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 13px;
+  margin-right: 10px;
+  color: var(--text-primary);
+}
+
+.sig-item {
+  display: inline-block;
+  margin-right: 14px;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.sig-item .arrow.up { color: #c0392b; font-weight: 700; }
+.sig-item .arrow.down { color: #2c6fb5; font-weight: 700; }
+
+.sig-item .g {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.sig-facet {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 12px;
+}
+
+.sig-none {
+  margin: 14px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 /* === Section Headers === */
