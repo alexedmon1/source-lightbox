@@ -24,12 +24,18 @@ def _read_csv(path: Path) -> dict:
 
 def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
                    contrast_labels: dict | None = None,
-                   contrast_groups: dict | None = None) -> dict:
+                   contrast_groups: dict | None = None,
+                   analysis_meta: dict | None = None) -> dict:
     """Build the manifest dictionary from aggregated scan results.
 
     Tables are embedded as parsed CSV data and summaries as rendered HTML,
     so the gallery works without a server (no fetch() needed).
+
+    ``analysis_meta`` (read from source-analytics) attaches a ``meta`` block —
+    ``domain`` and ``supplements`` — to each analysis so the gallery can group
+    by domain and nest each secondary under the primary it supplements.
     """
+    analysis_meta = analysis_meta or {}
     manifest = {
         "title": title,
         "paradigms": {},
@@ -131,6 +137,14 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
             entry["summary"] = summary_html
             if summary_html:
                 n_summaries += 1
+
+            # Domain / supplements metadata (for domain-grouped nav + nesting).
+            m = analysis_meta.get(analysis, {})
+            entry["meta"] = {
+                "domain": m.get("domain", "Other"),
+                "supplements": m.get("supplements"),
+                "description": m.get("description"),
+            }
 
     # Localization entries grouped by source
     for fig in scan.figures:

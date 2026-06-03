@@ -138,10 +138,12 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
 
     # 6. Build manifest (tables + summaries are embedded inline)
     _log("Building manifest...")
+    analysis_meta = _read_analysis_meta(config.brain_python)
     manifest = build_manifest(
         scan, config.title, max_table_rows=config.max_table_rows,
         contrast_labels=config.contrast_labels,
         contrast_groups=config.contrast_groups,
+        analysis_meta=analysis_meta,
     )
     manifest_json = json.dumps(manifest, indent=2)
     data_dir = out / "data"
@@ -166,6 +168,38 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
     _log(f"  {manifest['stats']['total_summaries']} summaries")
 
     return out
+
+
+def _read_analysis_meta(python: str | None) -> dict:
+    """Read source-analytics' ANALYSIS_METADATA (domain / supplements / …).
+
+    The gallery groups analyses by ``domain`` and nests each secondary under the
+    primary it ``supplements``. The single source of truth lives in
+    source-analytics, so we read it from that interpreter (same subprocess
+    pattern as the brain-mosaic / circos workers). Best-effort: an empty dict
+    just means the gallery falls back to a flat per-analysis layout.
+    """
+    import subprocess
+
+    # Fall back to the default source-analytics venv (same as circos / mosaics)
+    # when the study didn't pin paths.source_analytics_python.
+    from .circos import _resolve as _resolve_sa_python
+
+    python = python or str(_resolve_sa_python(None))
+
+    code = (
+        "import json; from source_analytics.core import analysis_meta; "
+        "print(json.dumps(analysis_meta()))"
+    )
+    try:
+        out = subprocess.run(
+            [python, "-c", code], capture_output=True, text=True, timeout=60
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return json.loads(out.stdout.strip().splitlines()[-1])
+    except Exception:  # noqa: BLE001
+        pass
+    return {}
 
 
 def _merge_scan(target: ScanResult, source: ScanResult):

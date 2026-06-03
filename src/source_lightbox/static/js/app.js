@@ -50,8 +50,12 @@
       if (parts[1] === "qc") renderQC(parts[2]);
       else if (parts[1] === "subjects") renderSubjects(parts[2]);
       else renderLocalizationHome();
+    } else if (parts[0] === "domain") {
+      // #/domain/<source>/<paradigm>/<domain>
+      renderDomain(decodeURIComponent(parts[1] || ""),
+        decodeURIComponent(parts[2] || ""), decodeURIComponent(parts[3] || ""));
     } else if (parts[0] === "analytics") {
-      // #/analytics/<source>/<paradigm>/<analysis>
+      // #/analytics/<source>/<paradigm>/<analysis>  (single-analysis deep link)
       var src = decodeURIComponent(parts[1] || "");
       if (parts.length >= 4) {
         renderAnalysis(parts[2], parts[3], src);
@@ -90,6 +94,59 @@
   function analyticsCrumbs(src, tail) {
     var base = analyticsSources().length > 1 ? ["Analytics", src] : ["Analytics"];
     return base.concat(tail || []);
+  }
+
+  /* ── Domain grouping ──────────────────────────────────────────────────────
+     Each analysis carries meta.domain (where it is listed) and meta.supplements
+     (the primary it runs *after*, consuming its output). The gallery shows one
+     page per (paradigm × domain); a secondary nests right after its primary as a
+     sub-tab. Domain order is fixed; unknown domains fall to the end. */
+  var DOMAIN_ORDER = ["Spectral", "Connectivity", "Cross-frequency", "Sensor-level", "Evoked", "Other"];
+
+  function analysisHasData(ad, src) {
+    return (ad.figures[src] && ad.figures[src].length > 0) ||
+           (ad.tables[src] && ad.tables[src].length > 0) || !!ad.summary;
+  }
+  function analysisDomain(ad) {
+    return (ad && ad.meta && ad.meta.domain) || "Other";
+  }
+
+  // Ordered domain names with ≥1 analysis that has data for src, within paradigm.
+  function domainsForParadigm(paradigm, src) {
+    var analyses = M.paradigms[paradigm] || {};
+    var present = {};
+    for (var a of Object.keys(analyses)) {
+      if (analysisHasData(analyses[a], src)) present[analysisDomain(analyses[a])] = true;
+    }
+    return DOMAIN_ORDER.filter(function (d) { return present[d]; })
+      .concat(Object.keys(present).filter(function (d) { return DOMAIN_ORDER.indexOf(d) < 0; }));
+  }
+
+  // Analyses in a (paradigm, domain) that have data for src — primaries first,
+  // each secondary placed immediately after the primary it supplements.
+  function domainAnalyses(paradigm, domain, src) {
+    var analyses = M.paradigms[paradigm] || {};
+    var names = Object.keys(analyses).filter(function (a) {
+      return analysisHasData(analyses[a], src) && analysisDomain(analyses[a]) === domain;
+    });
+    var suppOf = function (a) { return analyses[a].meta && analyses[a].meta.supplements; };
+    var prim = names.filter(function (a) { return !suppOf(a); });
+    var supp = names.filter(function (a) { return suppOf(a); });
+    var out = [];
+    prim.forEach(function (p) {
+      out.push({ name: p, supp: false });
+      supp.filter(function (s) { return suppOf(s) === p; })
+        .forEach(function (s) { out.push({ name: s, supp: true }); });
+    });
+    // Orphan secondaries (primary missing / no data) go last.
+    supp.filter(function (s) { return prim.indexOf(suppOf(s)) < 0; })
+      .forEach(function (s) { out.push({ name: s, supp: true }); });
+    return out;
+  }
+
+  function domainRoute(src, paradigm, domain) {
+    return "/domain/" + encodeURIComponent(src) + "/" + encodeURIComponent(paradigm) +
+      "/" + encodeURIComponent(domain);
   }
 
   /* ── Sidebar ── */
@@ -141,17 +198,11 @@
           }
           if (!hasData) continue;
 
-          var srcEnc = encodeURIComponent(src);
           html += '<div class="nav-study-design">' + formatName(paradigm) + '</div>';
-          for (var analysis of Object.keys(analyses)) {
-            var ad = analyses[analysis];
-            if ((ad.figures[src] && ad.figures[src].length > 0) ||
-                (ad.tables[src] && ad.tables[src].length > 0) ||
-                ad.summary) {
-              var r = "/analytics/" + srcEnc + "/" + paradigm + "/" + analysis;
-              html += navItem(r, formatName(analysis));
-            }
-          }
+          // Group analyses by domain (one nav item per domain → domain page).
+          domainsForParadigm(paradigm, src).forEach(function (domain) {
+            html += navItem(domainRoute(src, paradigm, domain), domain);
+          });
         }
       }
     }
@@ -192,28 +243,32 @@
         html += '<h2 class="section-header">' + escapeHtml(src) + '</h2>';
       }
       for (var paradigm of Object.keys(M.paradigms)) {
-        var analyses = M.paradigms[paradigm];
-        var items = [];
-        for (var aname of Object.keys(analyses)) {
-          var ad = analyses[aname];
-          var nf = (ad.figures[src] || []).length;
-          var nt = (ad.tables[src] || []).length;
-          if (nf > 0 || nt > 0 || ad.summary) {
-            items.push({ name: aname, nf: nf, nt: nt });
-          }
-        }
-        if (items.length === 0) continue;
+        var domains = domainsForParadigm(paradigm, src);
+        if (domains.length === 0) continue;
         html += '<h3 style="margin:12px 0 6px">' + formatName(paradigm) + '</h3>';
-        html += "<ul>";
-        for (var item of items) {
-          html += '<li><a href="#/analytics/' + srcEnc + '/' + paradigm + '/' + item.name + '">' +
-            formatName(item.name) + '</a> — ' + item.nf + ' figures, ' + item.nt + ' tables</li>';
-        }
-        html += "</ul>";
+        html += "<ul>" + domainListItems(paradigm, domains, src) + "</ul>";
       }
     }
 
     setContent(html);
+  }
+
+  // <li> rows for each domain in a paradigm (link → domain page, with counts).
+  function domainListItems(paradigm, domains, src) {
+    var rows = "";
+    domains.forEach(function (domain) {
+      var das = domainAnalyses(paradigm, domain, src);
+      var nf = 0, nt = 0;
+      das.forEach(function (o) {
+        var ad = M.paradigms[paradigm][o.name];
+        nf += (ad.figures[src] || []).length;
+        nt += (ad.tables[src] || []).length;
+      });
+      rows += '<li><a href="#' + domainRoute(src, paradigm, domain) + '">' + escapeHtml(domain) +
+        '</a> — ' + das.length + ' analys' + (das.length === 1 ? "is" : "es") +
+        ', ' + nf + ' figures, ' + nt + ' tables</li>';
+    });
+    return rows;
   }
 
   function statCard(value, label) {
@@ -228,22 +283,10 @@
     var html = '<h2 class="section-header">' + escapeHtml(src) + '</h2>';
 
     for (var paradigm of Object.keys(M.paradigms)) {
-      var analyses = M.paradigms[paradigm];
-      var items = [];
-      for (var aname of Object.keys(analyses)) {
-        var ad = analyses[aname];
-        if ((ad.figures[src] && ad.figures[src].length > 0) ||
-            (ad.tables[src] && ad.tables[src].length > 0) || ad.summary) {
-          items.push(aname);
-        }
-      }
-      if (items.length === 0) continue;
+      var domains = domainsForParadigm(paradigm, src);
+      if (domains.length === 0) continue;
       html += '<h3 style="margin:12px 0 6px">' + formatName(paradigm) + '</h3>';
-      html += "<ul>";
-      for (var a of items) {
-        html += '<li><a href="#/analytics/' + srcEnc + '/' + paradigm + '/' + a + '">' + formatName(a) + '</a></li>';
-      }
-      html += "</ul>";
+      html += "<ul>" + domainListItems(paradigm, domains, src) + "</ul>";
     }
     setContent(html);
   }
@@ -257,20 +300,10 @@
     }
     setBreadcrumb(analyticsCrumbs(src, [formatName(paradigm)]));
     clearSourceSelector();
-    var srcEnc = encodeURIComponent(src);
 
+    var domains = domainsForParadigm(paradigm, src);
     var html = '<h2 class="section-header">' + formatName(paradigm) + '</h2>';
-    html += "<ul>";
-    for (var aname of Object.keys(analyses)) {
-      var ad = analyses[aname];
-      var nf = (ad.figures[src] || []).length;
-      var nt = (ad.tables[src] || []).length;
-      if (nf > 0 || nt > 0 || ad.summary) {
-        html += '<li><a href="#/analytics/' + srcEnc + '/' + paradigm + '/' + aname + '">' +
-          formatName(aname) + '</a> — ' + nf + ' figures, ' + nt + ' tables</li>';
-      }
-    }
-    html += "</ul>";
+    html += "<ul>" + domainListItems(paradigm, domains, src) + "</ul>";
     setContent(html);
   }
 
@@ -302,10 +335,21 @@
   }
 
   function renderAnalysisContent(paradigm, analysis, data, source, allSources) {
-    var html = '<h2 class="section-header">' + formatName(paradigm) + ' — ' + formatName(analysis) + '</h2>';
+    var inner = buildAnalysisInner(paradigm, analysis, data, source, allSources, "a");
+    var html = '<h2 class="section-header">' + formatName(paradigm) + ' — ' + formatName(analysis) + '</h2>' + inner.html;
+    setContent(html);
+    initLightbox();
+    bindTableToggles(inner.tables);
+    bindTabs();
+    bindMetricTabs();
+  }
 
-    // Build each section's panel HTML separately, then expose them as tabs so a
-    // single analysis page isn't one long scroll of figures + tables + summary.
+  // Build the Summary/Figures/Tables tab UI for ONE analysis and return
+  // {html, tables} — no <h2>, no setContent/bind — so it can be dropped into a
+  // standalone analysis page OR a domain-page sub-panel (pill). `idPrefix` keeps
+  // table element ids unique when several analyses share one page.
+  function buildAnalysisInner(paradigm, analysis, data, source, allSources, idPrefix) {
+    idPrefix = idPrefix || "a";
     var sourcesWithFigs = allSources.filter(function (s) { return data.figures[s] && data.figures[s].length > 0; });
     var figs = (data.figures[source] || []);
     var figCount = figs.length;
@@ -328,7 +372,7 @@
       tablePanel = '<div class="tables-section">';
       for (var ti = 0; ti < tables.length; ti++) {
         var tbl = tables[ti];
-        var id = "tbl-" + ti + "-" + tbl.filename.replace(/[^a-z0-9]/gi, "_");
+        var id = idPrefix + "-tbl-" + ti + "-" + tbl.filename.replace(/[^a-z0-9]/gi, "_");
         var displayName = formatTableFilename(tbl.filename);
         tablePanel += '<button class="table-toggle" data-table-idx="' + ti + '" data-table-id="' + id + '">';
         tablePanel += '<span class="arrow">&#9654;</span> ' + displayName;
@@ -347,8 +391,9 @@
     if (figPanel) tabs.push({ id: "figures", label: "Figures", count: figCount, html: figPanel });
     if (tablePanel) tabs.push({ id: "tables", label: "Tables", count: tables.length, html: tablePanel });
 
+    var html = "";
     if (tabs.length === 0) {
-      html += '<div class="empty-state"><p>No figures, tables, or summary for this analysis.</p></div>';
+      html = '<div class="empty-state"><p>No figures, tables, or summary for this analysis.</p></div>';
     } else {
       html += '<div class="tab-bar" role="tablist">';
       tabs.forEach(function (t, i) {
@@ -361,23 +406,86 @@
         html += '<div class="tab-panel' + (i === 0 ? " active" : "") + '" data-panel="' + t.id + '">' + t.html + "</div>";
       });
     }
-
-    setContent(html);
-    initLightbox();
-    bindTableToggles(tables);
-    bindTabs();
-    bindMetricTabs();
+    return { html: html, tables: tables };
   }
 
-  function bindTabs() {
-    var btns = document.querySelectorAll(".tab-btn");
+  /* ── Domain Page (one page per paradigm × domain; secondaries nested) ──
+     A domain with a single analysis renders that analysis directly; with several
+     it exposes a pill bar (one pill per analysis, secondaries flagged), and each
+     pill's Summary/Figures/Tables content is filled in lazily on first view. */
+  function renderDomain(src, paradigm, domain) {
+    var ordered = domainAnalyses(paradigm, domain, src);
+    if (!ordered.length) {
+      setContent('<div class="empty-state"><p>Nothing in this domain.</p></div>');
+      return;
+    }
+    setBreadcrumb(analyticsCrumbs(src, [formatName(paradigm), domain]));
+    clearSourceSelector();
+
+    var html = '<h2 class="section-header">' + escapeHtml(domain) +
+      ' <span class="domain-sub">' + formatName(paradigm) + '</span></h2>';
+    if (ordered.length > 1) {
+      html += '<div class="pill-bar" role="tablist">';
+      ordered.forEach(function (o, i) {
+        var supTip = o.supp ? ' title="Runs after ' +
+          escapeHtml(M.paradigms[paradigm][o.name].meta.supplements) + '"' : "";
+        var supTag = o.supp ? ' <span class="pill-supp">supplemental</span>' : "";
+        html += '<button class="pill' + (i === 0 ? " active" : "") + '" data-pill="' + i + '"' +
+          supTip + '>' + formatName(o.name) + supTag + "</button>";
+      });
+      html += "</div>";
+    }
+    ordered.forEach(function (o, i) {
+      html += '<div class="pill-panel' + (i === 0 ? " active" : "") + '" data-pillpanel="' + i + '"></div>';
+    });
+    setContent(html);
+
+    var rendered = {};
+    function fill(i) {
+      if (rendered[i]) return;
+      rendered[i] = true;
+      var o = ordered[i];
+      var data = M.paradigms[paradigm][o.name];
+      var allSources = M.sources.filter(function (s) {
+        return (data.figures[s] && data.figures[s].length > 0) ||
+               (data.tables[s] && data.tables[s].length > 0);
+      });
+      var asrc = analysisHasData(data, src) ? src : (allSources[0] || src);
+      var cont = document.querySelector('[data-pillpanel="' + i + '"]');
+      var inner = buildAnalysisInner(paradigm, o.name, data, asrc, allSources, "p" + i);
+      var desc = (data.meta && data.meta.description)
+        ? ' <span class="analysis-desc">' + escapeHtml(data.meta.description) + '</span>' : "";
+      cont.innerHTML = (ordered.length > 1
+        ? '<h3 class="analysis-sub-header">' + formatName(o.name) + desc + '</h3>' : "") + inner.html;
+      initLightbox();
+      bindTableToggles(inner.tables, cont);
+      bindTabs(cont);
+      bindMetricTabs(cont);
+    }
+    fill(0);
+
+    document.querySelectorAll(".pill").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var i = parseInt(btn.getAttribute("data-pill"), 10);
+        document.querySelectorAll(".pill").forEach(function (b) { b.classList.toggle("active", b === btn); });
+        document.querySelectorAll(".pill-panel").forEach(function (p) {
+          p.classList.toggle("active", p.getAttribute("data-pillpanel") === String(i));
+        });
+        fill(i);
+      });
+    });
+  }
+
+  function bindTabs(root) {
+    root = root || document;
+    var btns = root.querySelectorAll(".tab-btn");
     btns.forEach(function (btn) {
       btn.addEventListener("click", function () {
         var id = btn.getAttribute("data-tab");
-        document.querySelectorAll(".tab-btn").forEach(function (b) {
+        root.querySelectorAll(".tab-btn").forEach(function (b) {
           b.classList.toggle("active", b === btn);
         });
-        document.querySelectorAll(".tab-panel").forEach(function (p) {
+        root.querySelectorAll(".tab-panel").forEach(function (p) {
           p.classList.toggle("active", p.getAttribute("data-panel") === id);
         });
       });
@@ -753,8 +861,8 @@
     return html;
   }
 
-  function bindMetricTabs() {
-    document.querySelectorAll(".metric-tabs").forEach(function (bar) {
+  function bindMetricTabs(root) {
+    (root || document).querySelectorAll(".metric-tabs").forEach(function (bar) {
       var container = bar.parentNode;
       bar.querySelectorAll(".metric-tab").forEach(function (btn) {
         btn.addEventListener("click", function () {
@@ -824,8 +932,8 @@
   }
 
   /* ── Tables (inline from manifest — no fetch needed) ── */
-  function bindTableToggles(tables) {
-    document.querySelectorAll(".table-toggle").forEach(function (btn) {
+  function bindTableToggles(tables, root) {
+    (root || document).querySelectorAll(".table-toggle").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var id = btn.getAttribute("data-table-id");
         var idx = parseInt(btn.getAttribute("data-table-idx"), 10);

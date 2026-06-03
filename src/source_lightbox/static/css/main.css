@@ -527,6 +527,63 @@ main {
   background: var(--accent-color);
 }
 
+/* ── Domain page: sub-header + analysis pills (one level above the Summary/
+   Figures/Tables tabs, so secondaries read as part of one domain) ── */
+.domain-sub {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-left: 8px;
+}
+
+.pill-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 16px 0 4px;
+}
+.pill {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 6px 15px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.pill:hover { color: var(--text-primary); }
+.pill.active {
+  color: #fff;
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+}
+.pill-supp {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  opacity: 0.8;
+  margin-left: 6px;
+}
+
+.pill-panel { display: none; }
+.pill-panel.active { display: block; }
+
+.analysis-sub-header {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 14px 0 0;
+  color: var(--text-primary);
+}
+.analysis-desc {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-left: 8px;
+}
+
 .tab-panel {
   display: none;
   padding-top: 18px;

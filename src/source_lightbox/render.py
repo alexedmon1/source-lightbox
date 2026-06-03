@@ -659,8 +659,12 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
                     rec["contrast"] = contrast_labels[rec["contrast"]]
         dest.mkdir(parents=True, exist_ok=True)
         stem = Path(tbl.filename).stem
+        # NBS is the network module's primary figure and lives on its own
+        # (Connectivity → Network) section, so it shows every connectivity metric
+        # rather than collapsing to one canonical overview facet.
+        as_overview = renderer.name != "nbs_heatmap"
         try:
-            paths = renderer.render(records, data["headers"], dest, stem, dpi, overview=True,
+            paths = renderer.render(records, data["headers"], dest, stem, dpi, overview=as_overview,
                                     contrast_labels=contrast_labels)
         except Exception as exc:  # noqa: BLE001
             log(f"  WARNING: render failed {tbl.filename} [{renderer.name}]: {exc}")
