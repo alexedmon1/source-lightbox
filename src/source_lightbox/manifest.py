@@ -147,13 +147,20 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
                 }
             )
 
-    # QC entries — embed metrics inline
+    # QC entries — embed metrics inline + per-subject group/outlier metadata
+    from .qc_meta import compute_subject_meta
+
     for qc in scan.qc_entries:
         source = qc.source_label
         if source not in manifest["localization"]:
             manifest["localization"][source] = {"subjects": {}, "qc_figures": []}
         if qc.metrics_path:
-            manifest["localization"][source]["qc_metrics"] = qc_csv_to_json(qc.metrics_path)
+            metrics = qc_csv_to_json(qc.metrics_path)
+            manifest["localization"][source]["qc_metrics"] = metrics
+            subject_keys = list(manifest["localization"][source].get("subjects", {}).keys())
+            meta = compute_subject_meta(metrics, subject_keys)
+            manifest["localization"][source]["subject_meta"] = meta
+            manifest["localization"][source]["n_outliers"] = sum(1 for m in meta.values() if m["outliers"])
         if qc.report_path:
             manifest["localization"][source]["qc_report"] = f"qc/{_slugify(source)}/qc_report.html"
 

@@ -109,8 +109,9 @@ def build(
     """Build a static gallery from analysis outputs."""
     import yaml as _yaml
 
-    # Labeled localization inputs supplied via --config (CLI flags take precedence).
+    # Labeled localization/results inputs from --config (CLI flags take precedence).
     config_loc_inputs = []
+    config_res_inputs = []
     # Study contrasts that drive brain-mosaic rendering (read from --config).
     contrasts = None
     # Contrast name -> readable label (read from --config).
@@ -131,29 +132,39 @@ def build(
             resolved = pp if pp.is_absolute() else (config_dir / pp).resolve()
             return str(resolved)
 
-        cfg_results = _resolve(paths.get("results"), "./results")
         cfg_analytics = _resolve(paths.get("analytics"), "./analytics")
 
-        # Localization: a list of {path, label} (comparison mode) or a scalar path.
-        loc_spec = paths.get("localizations")
-        if loc_spec:
-            for entry in loc_spec:
-                if isinstance(entry, dict):
-                    lp = _resolve(entry.get("path"), "")
-                    lbl = entry.get("label") or Path(lp).name
-                else:
-                    lp = _resolve(entry, "")
-                    lbl = Path(lp).name
-                if Path(lp).is_dir():
-                    config_loc_inputs.append(SourceInput(path=lp, label=lbl))
-        else:
-            cfg_loc = _resolve(paths.get("localization"), "./localization")
-            if Path(cfg_loc).is_dir():
-                config_loc_inputs.append(SourceInput(path=cfg_loc, label="Localization"))
+        def _labeled_inputs(spec, scalar_default, scalar_label):
+            """Parse a paths entry that is either a list of {path, label} (compared
+            sources, e.g. Shell vs Cartesian) or a single scalar path."""
+            out = []
+            if isinstance(spec, list):
+                for entry in spec:
+                    if isinstance(entry, dict):
+                        p = _resolve(entry.get("path"), "")
+                        lbl = entry.get("label") or Path(p).name
+                    else:
+                        p = _resolve(entry, "")
+                        lbl = Path(p).name
+                    if Path(p).is_dir():
+                        out.append(SourceInput(path=p, label=lbl))
+            else:
+                p = _resolve(spec, scalar_default)
+                if Path(p).is_dir():
+                    out.append(SourceInput(path=p, label=scalar_label or Path(p).name))
+            return out
+
+        # Localization pipelines and analytics results are both source namespaces:
+        # each may be a list of {path, label} (to compare reconstructions) or scalar.
+        config_loc_inputs.extend(
+            _labeled_inputs(paths.get("localizations") or paths.get("localization"),
+                            "./localization", "Localization")
+        )
+        config_res_inputs.extend(
+            _labeled_inputs(paths.get("results"), "./results", None)
+        )
 
         # Merge: CLI flags take precedence over config
-        if not results_dirs:
-            results_dirs = (cfg_results,) if Path(cfg_results).is_dir() else ()
         if analytics is None and Path(cfg_analytics).is_dir():
             analytics = cfg_analytics
         if title is None:
@@ -212,9 +223,11 @@ def build(
         else:
             res_inputs.append(si)
 
-    # Fall back to config-provided labeled localizations when none given on the CLI.
+    # Fall back to config-provided labeled inputs when none given on the CLI.
     if not loc_inputs and config_loc_inputs:
         loc_inputs = config_loc_inputs
+    if not res_inputs and config_res_inputs:
+        res_inputs = config_res_inputs
 
     config = BuildConfig(
         output_dir=output,

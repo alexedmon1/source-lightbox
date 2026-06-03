@@ -112,3 +112,40 @@ paths:
 ```
 
 A scalar `localization: ./localization` is still accepted for single-pipeline studies.
+
+### Two source namespaces: localization vs analytics
+
+The `paths:` block defines two distinct kinds of source, and the gallery keeps
+them separate:
+
+- **Localization sources** (`localizations`) — the source-reconstruction
+  pipelines (e.g. ROI, Shell). They power the **Localization → Subjects/QC**
+  browser and are *never* shown under Analytics.
+- **Analytics source(s)** (`results`) — the `source-analytics` output tree
+  (`figures/`, `tables/`). This is what the **Analytics** section lists.
+
+The Analytics navigation is derived purely from which sources actually contain
+figures/tables, so localization-only pipelines never appear there as empty
+folders, and a single analytics source shows its paradigms directly (no
+redundant source header). This is automatic for any study — no per-study
+configuration needed.
+
+**Comparing reconstructions.** Both `results` and `localizations` accept *either*
+a scalar path or a labeled list. To compare the same analysis across two
+reconstructions (e.g. a `vertex` analysis run on Shell vs Cartesian source
+spaces), give each results tree a label — matching the localization label ties
+each source's QC/subjects to its analytics:
+
+```yaml
+paths:
+  results:
+    - {path: ./results_vertex_shell,     label: "Shell"}
+    - {path: ./results_vertex_cartesian, label: "Cartesian"}
+  localizations:
+    - {path: ./localization/rest_shell,     label: "Shell"}
+    - {path: ./localization/rest_cartesian, label: "Cartesian"}
+```
+
+The `vertex` analysis pages then show a **Shell ↔ Cartesian** source toggle and
+side-by-side comparison. A scalar `results: ./results_treatment` remains the
+single-source default.

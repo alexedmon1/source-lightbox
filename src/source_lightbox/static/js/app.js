@@ -65,6 +65,33 @@
     }
   }
 
+  /* Sources that actually carry analytics data. Localization pipelines
+     (paths.localizations, e.g. ROI/Shell) are a separate namespace from the
+     analytics source(s) (paths.results) and have zero figures/tables here, so
+     they're excluded — derived from the data, no hardcoded source names. */
+  function analyticsSources() {
+    return M.sources.filter(function (src) {
+      for (var para of Object.keys(M.paradigms)) {
+        var analyses = M.paradigms[para];
+        for (var aname of Object.keys(analyses)) {
+          var ad = analyses[aname];
+          if ((ad.figures[src] && ad.figures[src].length) ||
+              (ad.tables[src] && ad.tables[src].length)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    });
+  }
+
+  /* Analytics breadcrumb — include the source only when more than one exists,
+     so a single results source (e.g. "results_treatment") isn't redundant noise. */
+  function analyticsCrumbs(src, tail) {
+    var base = analyticsSources().length > 1 ? ["Analytics", src] : ["Analytics"];
+    return base.concat(tail || []);
+  }
+
   /* ── Sidebar ── */
   function buildSidebar() {
     var nav = document.getElementById("sidebar-nav");
@@ -73,25 +100,31 @@
     // Overview
     html += '<a class="nav-item" href="#/overview" data-route="/overview">Overview</a>';
 
-    // Localization
-    if (Object.keys(M.localization).length > 0) {
+    // Localization — section title (matching Analytics), nested per source
+    var locSources = Object.keys(M.localization);
+    if (locSources.length > 0) {
       html += '<div class="nav-divider"></div>';
       html += '<div class="nav-section-title">Localization</div>';
-      for (var source of Object.keys(M.localization)) {
-        html += navItem("/localization/qc/" + source, "QC: " + source);
-        html += navItem("/localization/subjects/" + source, "Subjects: " + source);
+      for (var source of locSources) {
+        if (locSources.length > 1) {
+          html += '<div class="nav-paradigm">' + escapeHtml(source) + '</div>';
+        }
+        html += navItem("/localization/subjects/" + source, "Subjects");
+        html += navItem("/localization/qc/" + source, "QC");
       }
     }
 
-    // Analytics — grouped by source, then study design (paradigm), then analysis
-    if (M.sources.length > 0) {
+    // Analytics — grouped by source, then study design (paradigm), then analysis.
+    // Only sources with analytics data appear (localization-only sources skip).
+    var aSources = analyticsSources();
+    if (aSources.length > 0) {
       html += '<div class="nav-divider"></div>';
       html += '<div class="nav-section-title">Analytics</div>';
 
-      for (var si = 0; si < M.sources.length; si++) {
-        var src = M.sources[si];
-        // Only show source header if multiple sources
-        if (M.sources.length > 1) {
+      for (var si = 0; si < aSources.length; si++) {
+        var src = aSources[si];
+        // Only show source header when there's more than one analytics source
+        if (aSources.length > 1) {
           html += '<div class="nav-paradigm">' + escapeHtml(src) + '</div>';
         }
         // Group paradigms that have data for this source
@@ -147,14 +180,15 @@
     html += statCard(s.total_tables, "Tables");
     html += statCard(s.total_summaries, "Summaries");
     html += statCard(s.paradigm_count, "Study Designs");
-    html += statCard(M.sources.length, "Sources");
+    var aSources = analyticsSources();
+    html += statCard(aSources.length, aSources.length === 1 ? "Source" : "Sources");
     html += "</div>";
 
-    // List by source → paradigm → analysis
-    for (var si = 0; si < M.sources.length; si++) {
-      var src = M.sources[si];
+    // List by source → paradigm → analysis (only analytics sources)
+    for (var si = 0; si < aSources.length; si++) {
+      var src = aSources[si];
       var srcEnc = encodeURIComponent(src);
-      if (M.sources.length > 1) {
+      if (aSources.length > 1) {
         html += '<h2 class="section-header">' + escapeHtml(src) + '</h2>';
       }
       for (var paradigm of Object.keys(M.paradigms)) {
@@ -188,7 +222,7 @@
 
   /* ── Source Home (list paradigms for a source) ── */
   function renderSourceHome(src) {
-    setBreadcrumb(["Analytics", src]);
+    setBreadcrumb(analyticsCrumbs(src));
     clearSourceSelector();
     var srcEnc = encodeURIComponent(src);
     var html = '<h2 class="section-header">' + escapeHtml(src) + '</h2>';
@@ -221,7 +255,7 @@
       setContent('<div class="empty-state"><p>Study design not found</p></div>');
       return;
     }
-    setBreadcrumb(["Analytics", src, formatName(paradigm)]);
+    setBreadcrumb(analyticsCrumbs(src, [formatName(paradigm)]));
     clearSourceSelector();
     var srcEnc = encodeURIComponent(src);
 
@@ -248,7 +282,7 @@
       return;
     }
 
-    setBreadcrumb(["Analytics", src, formatName(paradigm), formatName(analysis)]);
+    setBreadcrumb(analyticsCrumbs(src, [formatName(paradigm), formatName(analysis)]));
 
     // Source selector (if multiple sources have this analysis)
     var sources = M.sources.filter(function (s) {
@@ -280,7 +314,9 @@
       figPanel = renderComparisonGrid(data, sourcesWithFigs);
       figCount = sourcesWithFigs.reduce(function (n, s) { return n + data.figures[s].length; }, 0);
     } else if (figs.length > 0) {
-      figPanel = renderFigureGrid(figs, PAGE_SIZE);
+      // Full-width titled rows (same as localization) so analysis figures are
+      // readable inline, not tiny thumbnails.
+      figPanel = renderFigureRows(figs);
     }
 
     var tableSource = data.tables[source] ? source : Object.keys(data.tables)[0];
@@ -346,15 +382,57 @@
   }
 
   /* ── Localization Pages ── */
+  /* Treatment-group helpers (shared by the localization pages) */
+  var TX_GROUP_ORDER = ["WT_VEH", "KO_VEH", "KO_HD_ICV", "KO_HD_IV", "KO_LD_IV_ICV"];
+  var TX_GROUP_LABELS = {
+    "WT_VEH": "WT Vehicle", "KO_VEH": "KO Vehicle",
+    "KO_HD_ICV": "KO HD-ICV", "KO_HD_IV": "KO HD-IV", "KO_LD_IV_ICV": "KO LD-IV+ICV",
+  };
+  function formatGroup(g) {
+    if (!g) return "Unknown";
+    return TX_GROUP_LABELS[g] || g.replace(/_/g, " ");
+  }
+  function groupSubjects(loc) {
+    var meta = loc.subject_meta || {};
+    var buckets = {};
+    for (var key of Object.keys(loc.subjects || {})) {
+      var g = (meta[key] && meta[key].group) || "Unknown";
+      (buckets[g] = buckets[g] || []).push(key);
+    }
+    var order = TX_GROUP_ORDER.filter(function (g) { return buckets[g]; })
+      .concat(Object.keys(buckets).filter(function (g) { return TX_GROUP_ORDER.indexOf(g) < 0; }));
+    return order.map(function (g) { return { group: g, subjects: buckets[g].sort() }; });
+  }
+  function subjectIsOutlier(loc, key) {
+    var m = loc.subject_meta && loc.subject_meta[key];
+    return m && m.outliers && m.outliers.length ? m.outliers : null;
+  }
+
   function renderLocalizationHome() {
     setBreadcrumb(["Localization"]);
     clearSourceSelector();
     var html = '<h2 class="section-header">Localization</h2>';
+    html += '<p class="page-lead">Source-reconstruction pipelines and per-subject QC.</p>';
+    html += '<div class="loc-cards">';
     for (var source of Object.keys(M.localization)) {
-      html += '<h3 style="margin:12px 0">' + escapeHtml(source) + '</h3>';
-      html += '<p><a href="#/localization/qc/' + encodeURIComponent(source) + '">QC Dashboard</a></p>';
-      html += '<p><a href="#/localization/subjects/' + encodeURIComponent(source) + '">Per-Subject Figures</a></p>';
+      var loc = M.localization[source];
+      var nSub = Object.keys(loc.subjects || {}).length;
+      var nOut = loc.n_outliers || 0;
+      var enc = encodeURIComponent(source);
+      html += '<div class="loc-card">';
+      html += '<h3>' + escapeHtml(source) + '</h3>';
+      html += '<div class="loc-stats"><span>' + nSub + ' subjects</span>';
+      html += '<span class="' + (nOut ? "loc-flag" : "") + '">' + nOut + ' outlier' + (nOut === 1 ? "" : "s") + '</span></div>';
+      html += '<div class="loc-groups">';
+      for (var gb of groupSubjects(loc)) {
+        html += '<span class="loc-group-chip">' + escapeHtml(formatGroup(gb.group)) + ' <b>' + gb.subjects.length + '</b></span>';
+      }
+      html += '</div><div class="loc-links">';
+      html += '<a class="btn-link" href="#/localization/subjects/' + enc + '">Browse subjects</a>';
+      html += '<a class="btn-link" href="#/localization/qc/' + enc + '">QC dashboard</a>';
+      html += '</div></div>';
     }
+    html += '</div>';
     setContent(html);
   }
 
@@ -363,33 +441,52 @@
     var loc = M.localization[source];
     if (!loc) { setContent('<div class="empty-state">Source not found</div>'); return; }
 
-    setBreadcrumb(["Localization", "QC", source]);
+    setBreadcrumb(["Localization", source, "QC"]);
     clearSourceSelector();
 
+    var nSub = Object.keys(loc.subjects || {}).length;
+    var nOut = loc.n_outliers || 0;
     var html = '<h2 class="section-header">QC — ' + escapeHtml(source) + '</h2>';
+    html += '<p class="qc-lead">' + nSub + ' subjects &middot; <span class="' + (nOut ? "loc-flag" : "") + '">' +
+      nOut + ' flagged as outlier' + (nOut === 1 ? "" : "s") + '</span> (z &gt; 2 on key metrics).</p>';
 
-    if (loc.qc_metrics && loc.qc_metrics.length > 0) {
-      html += '<h3 class="section-header" style="font-size:15px">QC Metrics</h3>';
-      html += renderQCMetricsTable(loc.qc_metrics);
-    }
+    var figsPanel = (loc.qc_figures && loc.qc_figures.length) ? renderFigureRows(loc.qc_figures) : "";
+    var metricsPanel = (loc.qc_metrics && loc.qc_metrics.length) ? renderQCMetricsTable(loc.qc_metrics, loc.subject_meta) : "";
+    var reportPanel = loc.qc_report ? '<iframe class="qc-iframe" src="' + loc.qc_report + '"></iframe>' : "";
 
-    if (loc.qc_figures && loc.qc_figures.length > 0) {
-      html += '<h3 class="section-header" style="font-size:15px">QC Figures</h3>';
-      html += renderFigureGrid(loc.qc_figures, PAGE_SIZE);
-    }
+    var tabs = [];
+    if (figsPanel) tabs.push({ id: "figures", label: "Figures", html: figsPanel });
+    if (metricsPanel) tabs.push({ id: "metrics", label: "Metrics", html: metricsPanel });
+    if (reportPanel) tabs.push({ id: "report", label: "Report", html: reportPanel });
 
-    if (loc.qc_report) {
-      html += '<h3 class="section-header" style="font-size:15px">QC Report</h3>';
-      html += '<iframe class="qc-iframe" src="' + loc.qc_report + '"></iframe>';
+    if (tabs.length === 0) {
+      html += '<div class="empty-state"><p>No QC data for this source.</p></div>';
+    } else {
+      html += '<div class="tab-bar" role="tablist">';
+      tabs.forEach(function (t, i) {
+        html += '<button class="tab-btn' + (i === 0 ? " active" : "") + '" data-tab="' + t.id + '">' + t.label + '</button>';
+      });
+      html += '</div>';
+      tabs.forEach(function (t, i) {
+        html += '<div class="tab-panel' + (i === 0 ? " active" : "") + '" data-panel="' + t.id + '">' + t.html + '</div>';
+      });
     }
 
     setContent(html);
     initLightbox();
     initTableSort();
+    bindTabs();
   }
 
-  function renderQCMetricsTable(metrics) {
+  function renderQCMetricsTable(metrics, subjectMeta) {
     if (!metrics || metrics.length === 0) return "";
+    subjectMeta = subjectMeta || {};
+    var outlierIds = {};
+    for (var k of Object.keys(subjectMeta)) {
+      if (subjectMeta[k].outliers && subjectMeta[k].outliers.length) {
+        outlierIds[k.replace(/^sub-/, "")] = subjectMeta[k].outliers;
+      }
+    }
     var headers = Object.keys(metrics[0]);
     var html = '<div class="table-container"><table><thead><tr>';
     for (var h of headers) {
@@ -397,7 +494,8 @@
     }
     html += "</tr></thead><tbody>";
     for (var row of metrics) {
-      html += "<tr>";
+      var flagged = outlierIds[String(row.subject_id)];
+      html += "<tr" + (flagged ? ' class="qc-outlier-row" title="Outlier: ' + escapeHtml(flagged.join(", ")) + '"' : "") + ">";
       for (var h of headers) {
         html += '<td>' + escapeHtml(row[h] || "") + '</td>';
       }
@@ -412,35 +510,57 @@
     var loc = M.localization[source];
     if (!loc) { setContent('<div class="empty-state">Source not found</div>'); return; }
 
-    setBreadcrumb(["Localization", "Subjects", source]);
+    setBreadcrumb(["Localization", source, "Subjects"]);
     clearSourceSelector();
 
-    var subjects = Object.keys(loc.subjects).sort();
-    if (subjects.length === 0) {
+    var subjectKeys = Object.keys(loc.subjects || {});
+    if (subjectKeys.length === 0) {
       setContent('<div class="empty-state"><p>No subject figures found</p></div>');
       return;
     }
 
     var html = '<h2 class="section-header">Subjects — ' + escapeHtml(source) + '</h2>';
-    html += '<div class="subject-selector"><label>Subject: <select id="subject-select">';
-    for (var sub of subjects) {
-      html += '<option value="' + sub + '">' + sub + '</option>';
+    html += '<div class="subject-browser"><div class="subject-list">';
+    for (var gb of groupSubjects(loc)) {
+      html += '<div class="subject-group"><div class="subject-group-label">' +
+        escapeHtml(formatGroup(gb.group)) + ' <span class="cnt">' + gb.subjects.length + '</span></div>';
+      html += '<div class="subject-chips">';
+      for (var key of gb.subjects) {
+        var sid = key.replace(/^sub-/, "");
+        var out = subjectIsOutlier(loc, key);
+        html += '<button class="subject-chip' + (out ? " is-outlier" : "") + '" data-sub="' + key + '"' +
+          (out ? ' title="Outlier: ' + escapeHtml(out.join(", ")) + '"' : "") + '>' +
+          escapeHtml(sid) + (out ? ' <span class="warn">&#9888;</span>' : "") + '</button>';
+      }
+      html += '</div></div>';
     }
-    html += "</select></label></div>";
-    html += '<div id="subject-figures"></div>';
+    html += '</div><div class="subject-detail"><div id="subject-meta"></div><div id="subject-figures"></div></div></div>';
 
     setContent(html);
 
-    var sel = document.getElementById("subject-select");
-    sel.addEventListener("change", function () {
-      renderSubjectFigures(loc.subjects[sel.value]);
+    var chips = document.querySelectorAll(".subject-chip");
+    chips.forEach(function (chip) {
+      chip.addEventListener("click", function () {
+        chips.forEach(function (c) { c.classList.toggle("active", c === chip); });
+        showSubject(loc, chip.getAttribute("data-sub"));
+      });
     });
-    renderSubjectFigures(loc.subjects[subjects[0]]);
+    if (chips.length) {
+      chips[0].classList.add("active");
+      showSubject(loc, chips[0].getAttribute("data-sub"));
+    }
   }
 
-  function renderSubjectFigures(figs) {
-    var container = document.getElementById("subject-figures");
-    container.innerHTML = renderFigureGrid(figs || [], 100);
+  function showSubject(loc, key) {
+    var meta = (loc.subject_meta && loc.subject_meta[key]) || { group: null, outliers: [] };
+    var sid = key.replace(/^sub-/, "");
+    var bits = '<span class="sm-id">' + escapeHtml(sid) + '</span>';
+    if (meta.group) bits += '<span class="sm-group">' + escapeHtml(formatGroup(meta.group)) + '</span>';
+    if (meta.outliers && meta.outliers.length) {
+      bits += '<span class="sm-out">&#9888; outlier: ' + escapeHtml(meta.outliers.join(", ")) + '</span>';
+    }
+    document.getElementById("subject-meta").innerHTML = '<div class="subject-meta-bar">' + bits + '</div>';
+    document.getElementById("subject-figures").innerHTML = renderFigureRows(loc.subjects[key] || []);
     initLightbox();
   }
 
@@ -518,6 +638,38 @@
         JSON.stringify(figs.slice(limit)).replace(/'/g, "&#39;") +
         "'>Show " + (figs.length - limit) + " more</button>";
     }
+    return html;
+  }
+
+  function formatFigureTitle(filename) {
+    var name = (filename || "").replace(/\.(png|jpe?g|svg|pdf)$/i, "");
+    name = name.replace(/^\d+[_-]/, "");   // strip a leading "01_"
+    name = name.replace(/__+/g, " — ");    // double underscore = section separator
+    name = name.replace(/_/g, " ").trim(); // single underscore = space (hyphens kept)
+    // Title-case word initials, fixing known acronyms (ROI, PSD, MVPA, NBS, …).
+    name = name.replace(/\S+/g, function (w) {
+      var key = w.toLowerCase();
+      if (ACRONYMS[key]) return ACRONYMS[key];
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    });
+    return name.replace(/\bZscore\b/i, "Z-Score");
+  }
+
+  // One figure per full-width row with a title — for reading diagnostics inline
+  // (vs the thumbnail grid). Full image shown; click opens the lightbox to zoom.
+  function renderFigureRows(figs) {
+    if (!figs || figs.length === 0) {
+      return '<div class="empty-state"><p>No figures</p></div>';
+    }
+    var html = '<div class="figure-rows">';
+    for (var fig of figs) {
+      html += '<figure class="figure-row">';
+      html += '<figcaption>' + escapeHtml(formatFigureTitle(fig.filename)) + '</figcaption>';
+      html += '<a href="' + fig.path + '" class="glightbox" data-gallery="gallery">';
+      html += '<img src="' + fig.path + '" alt="' + escapeHtml(fig.filename) + '" loading="lazy">';
+      html += '</a></figure>';
+    }
+    html += "</div>";
     return html;
   }
 
