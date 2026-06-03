@@ -46,18 +46,30 @@ def main() -> None:
     if contrasts:
         df = df[df["contrast"].isin(contrasts)]
 
-    # Significant bands only: keep (contrast, band) cells with >=1 significant ROI.
+    # Category axis: spectral tables use "band"; aperiodic uses "dv"
+    # (exponent/offset). Mosaics are faceted per (contrast, category[, power_type]).
+    cat_col = "band" if "band" in df.columns else ("dv" if "dv" in df.columns else None)
+
+    # Significant cells only: keep (contrast, category) cells with >=1 significant ROI.
     if "significant" in df.columns:
         sig_mask = df["significant"].astype(str).str.upper().isin(["TRUE", "1", "YES", "T"])
     elif "q_value" in df.columns:
         sig_mask = pd.to_numeric(df["q_value"], errors="coerce") < alpha
     else:
         sig_mask = pd.Series(True, index=df.index)
-    keep = set(zip(df.loc[sig_mask, "contrast"], df.loc[sig_mask, "band"]))
-    if not keep:
-        print(json.dumps([]))
-        return
-    df = df[[(c, b) in keep for c, b in zip(df["contrast"], df["band"])]]
+
+    if cat_col:
+        keep = set(zip(df.loc[sig_mask, "contrast"], df.loc[sig_mask, cat_col]))
+        if not keep:
+            print(json.dumps([]))
+            return
+        df = df[[(c, b) in keep for c, b in zip(df["contrast"], df[cat_col])]]
+    else:
+        keep_contrasts = set(df.loc[sig_mask, "contrast"])
+        if not keep_contrasts:
+            print(json.dumps([]))
+            return
+        df = df[df["contrast"].isin(keep_contrasts)]
 
     # Readable contrast labels drive mosaic titles + filenames (after filtering,
     # which used the raw names).
@@ -68,7 +80,7 @@ def main() -> None:
 
     filtered = out_dir / "_filtered.csv"
     df.to_csv(filtered, index=False)
-    facet_cols = [c for c in ("contrast", "band", "power_type") if c in df.columns]
+    facet_cols = [c for c in ("contrast", cat_col, "power_type") if c and c in df.columns]
     paths = render_posthoc_mosaics(
         filtered,
         categories,
