@@ -36,6 +36,26 @@ def _summary_table(tables: list[dict]) -> dict | None:
     return max(candidates, key=lambda t: _table_priority(t["filename"]))
 
 
+_DEGENERATE = {"", "na", "nan", "none"}
+
+
+def _category_column(headers: list[str], records: list[dict]) -> str | None:
+    """Per-contrast category axis: ``band``/``freq_pair`` for spectral tables,
+    ``dv`` (exponent/offset) for aperiodic. Skips a column that is entirely NA
+    (aperiodic carries a placeholder ``band = NA``)."""
+    for col in ("band", "freq_pair", "dv"):
+        if col in headers:
+            if any(
+                v is not None and str(v).strip().lower() not in _DEGENERATE
+                for v in (r.get(col) for r in records)
+            ):
+                return col
+    for col in ("band", "freq_pair", "dv"):
+        if col in headers:
+            return col
+    return None
+
+
 def build_significance_summary(tables: list[dict], contrast_labels: dict | None = None) -> str | None:
     """Return concise HTML summarizing significant effects by contrast, or None.
 
@@ -53,8 +73,10 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
 
     headers = table["headers"]
     records = _records(headers, table["rows"])
-    cat = "band" if "band" in headers else "freq_pair"
+    cat = _category_column(headers, records)
     facet_col, _ = _facet_column(headers, records)
+    if facet_col == cat:  # don't repeat the category as its own facet (aperiodic dv)
+        facet_col = None
 
     all_contrasts = _unique(records, "contrast")
     sig_by_contrast: dict[str, list[dict]] = {}
@@ -99,9 +121,8 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
 
     html = '<div class="sig-summary">'
     html += (
-        f'<p class="sig-lead">{n_findings} significant contrast'
-        f"&times;band effect{'s' if n_findings != 1 else ''} across "
-        f"{len(sig_by_contrast)} of {len(all_contrasts)} comparisons "
+        f'<p class="sig-lead">{n_findings} significant effect{"s" if n_findings != 1 else ""} '
+        f"across {len(sig_by_contrast)} of {len(all_contrasts)} comparisons "
         "(FDR q &lt; 0.05). <span class=\"sig-key\">&#9650; first group higher, "
         "&#9660; lower</span>.</p>"
     )

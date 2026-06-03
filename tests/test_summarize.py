@@ -46,6 +46,23 @@ def test_no_effect_size_table_returns_none():
     assert build_significance_summary([tbl]) is None
 
 
+def test_aperiodic_uses_dv_when_band_is_na():
+    # Aperiodic tables carry band="NA"; the category should fall back to dv.
+    tbl = _tbl(
+        "roi_aperiodic_posthoc_global.csv",
+        "contrast,dv,band,hedges_g,significant",
+        [
+            "hd_icv_vs_wt,exponent,NA,-2.61,TRUE",
+            "hd_icv_vs_wt,offset,NA,-2.00,TRUE",
+            "disease_effect,exponent,NA,-0.4,FALSE",
+        ],
+    )
+    html = build_significance_summary([tbl])
+    assert html is not None
+    assert "exponent" in html and "offset" in html
+    assert ">NA<" not in html and " NA " not in html
+
+
 def test_no_significant_rows_states_so():
     tbl = _tbl("x_global.csv", "contrast,band,hedges_g,significant",
               ["disease_effect,Alpha,0.1,FALSE"])
