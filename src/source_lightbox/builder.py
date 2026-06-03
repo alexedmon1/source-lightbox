@@ -59,7 +59,7 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
     #    every build, so clear stale ones (and their thumbnails) to avoid orphans
     #    from a prior run. Localization figures are stable and kept.
     out.mkdir(parents=True, exist_ok=True)
-    for sub in ("figures/analytics", "figures/thumbs/analytics"):
+    for sub in ("figures/analytics", "figures/thumbs/analytics", "qc"):
         shutil.rmtree(out / sub, ignore_errors=True)
 
     # 2b. Render standardized figures from tables (staged, then treated like any
@@ -93,10 +93,13 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(fig.src_path, dst)
 
-    # 4. Process QC report (only file that stays external — it's a full HTML page)
+    # 4. Process QC report (a full self-contained HTML page). Namespace by source
+    #    slug so multiple localization sources (e.g. ROI + Shell) don't collide.
+    from .scanner import _slugify
+
     for qc in scan.qc_entries:
         if qc.report_path:
-            qc_out = out / "qc"
+            qc_out = out / "qc" / _slugify(qc.source_label)
             qc_out.mkdir(parents=True, exist_ok=True)
             shutil.copy2(qc.report_path, qc_out / "qc_report.html")
 

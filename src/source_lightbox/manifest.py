@@ -155,7 +155,7 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
         if qc.metrics_path:
             manifest["localization"][source]["qc_metrics"] = qc_csv_to_json(qc.metrics_path)
         if qc.report_path:
-            manifest["localization"][source]["qc_report"] = "qc/qc_report.html"
+            manifest["localization"][source]["qc_report"] = f"qc/{_slugify(source)}/qc_report.html"
 
     # Compute stats
     manifest["stats"] = {
