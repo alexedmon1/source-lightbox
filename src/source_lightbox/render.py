@@ -171,14 +171,26 @@ def _grid(records, row_key, col_key, value_fn, sig_fn=_is_sig, agg="last"):
 
 
 def _heatmap(mat, rows, cols, smask, title, out_path, dpi,
-             center=0.0, value_label="Hedges g", cmap="RdBu_r"):
-    """Diverging heatmap around ``center`` with significance stars."""
+             center=0.0, value_label="Hedges g", cmap="RdBu_r",
+             vmin=None, vmax=None, int_annot=False):
+    """Heatmap with significance stars.
+
+    Diverging around ``center`` by default; pass ``vmin``/``vmax`` for a fixed
+    (e.g. sequential) scale. ``int_annot`` formats cell labels as integers.
+    """
     n_r, n_c = mat.shape
     fig, ax = plt.subplots(figsize=(max(4.0, 0.65 * n_c + 2.5), max(2.5, 0.45 * n_r + 1.4)))
     finite = mat[np.isfinite(mat)]
-    dev = float(np.max(np.abs(finite - center))) if finite.size else 1.0
-    dev = dev or 1.0
-    im = ax.imshow(mat, cmap=cmap, vmin=center - dev, vmax=center + dev, aspect="auto")
+    if vmin is not None or vmax is not None:
+        lo = vmin if vmin is not None else (float(np.min(finite)) if finite.size else 0.0)
+        hi = vmax if vmax is not None else (float(np.max(finite)) if finite.size else 1.0)
+        if hi <= lo:
+            hi = lo + 1.0
+    else:
+        dev = float(np.max(np.abs(finite - center))) if finite.size else 1.0
+        dev = dev or 1.0
+        lo, hi = center - dev, center + dev
+    im = ax.imshow(mat, cmap=cmap, vmin=lo, vmax=hi, aspect="auto")
     ax.set_xticks(range(n_c))
     ax.set_xticklabels(cols, rotation=45, ha="right", fontsize=8)
     ax.set_yticks(range(n_r))
@@ -186,10 +198,12 @@ def _heatmap(mat, rows, cols, smask, title, out_path, dpi,
     for i in range(n_r):
         for j in range(n_c):
             if np.isfinite(mat[i, j]):
-                label = f"{mat[i, j]:.2f}" + ("★" if smask[i, j] else "")
+                v = mat[i, j]
+                label = (f"{int(round(v))}" if int_annot else f"{v:.2f}") + ("★" if smask[i, j] else "")
+                frac = (v - lo) / (hi - lo) if hi > lo else 0.0
                 ax.text(
                     j, i, label, ha="center", va="center", fontsize=7,
-                    color="white" if abs(mat[i, j] - center) > 0.6 * dev else "black",
+                    color="white" if frac > 0.62 else "black",
                 )
     ax.set_title(title, fontsize=10)
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
@@ -254,7 +268,7 @@ class _Renderer:
         return False
 
     @staticmethod
-    def render(records, headers, out_dir, stem, dpi, overview=False):  # pragma: no cover
+    def render(records, headers, out_dir, stem, dpi, overview=False, contrast_labels=None):  # pragma: no cover
         return []
 
 
@@ -268,7 +282,7 @@ class RoiBandHeatmap(_Renderer):
         return _has(headers, "contrast", "roi", "band", "hedges_g")
 
     @staticmethod
-    def render(records, headers, out_dir, stem, dpi, overview=False):
+    def render(records, headers, out_dir, stem, dpi, overview=False, contrast_labels=None):
         contrasts = _unique(records, "contrast")
         if overview and contrasts:
             contrasts = [_pick_preferred(contrasts, _CONTRAST_PREF)]
@@ -300,7 +314,7 @@ class MvpaHeatmap(_Renderer):
         )
 
     @staticmethod
-    def render(records, headers, out_dir, stem, dpi, overview=False):
+    def render(records, headers, out_dir, stem, dpi, overview=False, contrast_labels=None):
         metric = "auc" if "auc" in headers else "accuracy"
         return _facet_heatmaps(
             records, headers, out_dir, stem, dpi,
@@ -310,33 +324,92 @@ class MvpaHeatmap(_Renderer):
         )
 
 
-class NbsComponentPlot(_Renderer):
-    """Network-Based Statistic: largest component per key, colored by significance."""
+def _parse_nbs_key(key: str):
+    """Split an NBS key ``<contrast>_<band>[_<metric>]`` into its parts.
 
-    name = "nbs_component"
+    The key joins fields with ``_`` but bands themselves contain spaces
+    ("Low Gamma"), so we locate a known band token rather than naive splitting.
+    Returns ``(contrast, band, metric)`` or ``(None, None, None)``.
+    """
+    for band in sorted(BAND_ORDER + ["Epsilon"], key=len, reverse=True):
+        marker = "_" + band
+        idx = key.find(marker)
+        if idx < 0:
+            continue
+        rest = key[idx + len(marker):]
+        if rest == "" or rest.startswith("_"):
+            return key[:idx], band, (rest[1:] if rest.startswith("_") else "")
+    return None, None, None
+
+
+class NbsComponentPlot(_Renderer):
+    """Network-Based Statistic as a contrast x band heatmap of the largest
+    significant component's size, faceted by connectivity metric."""
+
+    name = "nbs_heatmap"
 
     @staticmethod
     def matches(headers):
         return _has(headers, "key", "component", "n_edges", "p_corrected")
 
     @staticmethod
-    def render(records, headers, out_dir, stem, dpi, overview=False):
-        largest: dict[str, dict] = {}
+    def render(records, headers, out_dir, stem, dpi, overview=False, contrast_labels=None):
+        labels = contrast_labels or {}
+        # Parse keys into contrast/band/metric; keep the largest component per cell.
+        parsed = []
         for rec in records:
             key = rec.get("key")
-            if key in (None, ""):
+            if not key:
                 continue
-            n = _to_float(rec.get("n_edges")) or 0.0
-            if key not in largest or n > (_to_float(largest[key].get("n_edges")) or 0.0):
-                largest[key] = rec
-        if not largest:
-            return []
-        keys = list(largest.keys())
-        values = [_to_float(largest[k].get("n_edges")) or 0.0 for k in keys]
-        sig = [_is_sig(largest[k]) for k in keys]
-        path = out_dir / f"{stem}__nbs.png"
-        _bar(keys, values, sig, f"{stem} — largest component / key", "n_edges", path, dpi)
-        return [path]
+            contrast, band, metric = _parse_nbs_key(str(key))
+            if contrast is None:
+                continue
+            parsed.append({
+                "contrast": labels.get(contrast, contrast),
+                "band": band,
+                "metric": metric,
+                "n_edges": rec.get("n_edges"),
+                "p_corrected": rec.get("p_corrected"),
+            })
+
+        if not parsed:  # unparseable keys → fall back to the per-key bar chart
+            largest: dict[str, dict] = {}
+            for rec in records:
+                key = rec.get("key")
+                if key in (None, ""):
+                    continue
+                n = _to_float(rec.get("n_edges")) or 0.0
+                if key not in largest or n > (_to_float(largest[key].get("n_edges")) or 0.0):
+                    largest[key] = rec
+            if not largest:
+                return []
+            keys = list(largest.keys())
+            path = out_dir / f"{stem}__nbs.png"
+            _bar(keys, [_to_float(largest[k].get("n_edges")) or 0.0 for k in keys],
+                 [_is_sig(largest[k]) for k in keys], f"{stem} — largest component / key",
+                 "n_edges", path, dpi)
+            return [path]
+
+        metrics = _unique(parsed, "metric") or [None]
+        out = []
+        for metric in metrics:
+            subset = parsed if metric in (None, "") else [r for r in parsed if r.get("metric") == metric]
+            mat, rows, cols, smask = _grid(
+                subset, "contrast", "band",
+                lambda r: _to_float(r.get("n_edges")), sig_fn=_is_sig, agg="max_abs",
+            )
+            if not rows or not cols:
+                continue
+            title = stem + (f" — {metric}" if metric else "")
+            fname = f"{stem}__nbs" + (f"_{_slugify(metric)}" if metric else "") + ".png"
+            path = out_dir / fname
+            _heatmap(mat, rows, cols, smask, title, path, dpi,
+                     value_label="largest component (edges); ★ p<0.05",
+                     cmap="Blues", vmin=0, int_annot=True)
+            out.append(path)
+            if overview:
+                break
+        return out
 
 
 class ClusterHeatmap(_Renderer):
@@ -349,7 +422,7 @@ class ClusterHeatmap(_Renderer):
         return _has(headers, "band", "cluster_stat", "p_corrected")
 
     @staticmethod
-    def render(records, headers, out_dir, stem, dpi, overview=False):
+    def render(records, headers, out_dir, stem, dpi, overview=False, contrast_labels=None):
         return _facet_heatmaps(
             records, headers, out_dir, stem, dpi,
             value_fn=lambda r: _to_float(r.get("cluster_stat")),
@@ -368,7 +441,7 @@ class SummaryHeatmap(_Renderer):
         return _has(headers, "band", "max_abs_hedges_g")
 
     @staticmethod
-    def render(records, headers, out_dir, stem, dpi, overview=False):
+    def render(records, headers, out_dir, stem, dpi, overview=False, contrast_labels=None):
         def sig_fn(rec):
             if "n_nominal_sig" in rec:
                 return (_to_float(rec.get("n_nominal_sig")) or 0) > 0
@@ -402,7 +475,7 @@ class EffectSizeHeatmap(_Renderer):
         )
 
     @staticmethod
-    def render(records, headers, out_dir, stem, dpi, overview=False):
+    def render(records, headers, out_dir, stem, dpi, overview=False, contrast_labels=None):
         col_key = "band" if "band" in headers else "freq_pair"
         return _facet_heatmaps(
             records, headers, out_dir, stem, dpi,
@@ -557,7 +630,8 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
         dest.mkdir(parents=True, exist_ok=True)
         stem = Path(tbl.filename).stem
         try:
-            paths = renderer.render(records, data["headers"], dest, stem, dpi, overview=True)
+            paths = renderer.render(records, data["headers"], dest, stem, dpi, overview=True,
+                                    contrast_labels=contrast_labels)
         except Exception as exc:  # noqa: BLE001
             log(f"  WARNING: render failed {tbl.filename} [{renderer.name}]: {exc}")
             continue
