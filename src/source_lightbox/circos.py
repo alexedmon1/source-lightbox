@@ -31,9 +31,13 @@ def circos_available(python_path=None) -> bool:
 
 
 def render_circos(edges_csv, posthoc_csv, out_dir, contrasts, *,
-                  metrics=None, labels=None, alpha=0.05,
+                  global_csv=None, metrics=None, labels=None, alpha=0.05,
                   python_path=None, log=lambda *a, **k: None):
     """Render significance circos for each metric × significant (contrast, band).
+
+    When ``global_csv`` (the omnibus connectivity table) is given, circos are
+    gated on global significance — region-pair post-hocs are only shown where the
+    global test is significant.
 
     Returns the list of written PNG paths (empty on any failure — never raises).
     """
@@ -41,6 +45,7 @@ def render_circos(edges_csv, posthoc_csv, out_dir, contrasts, *,
     payload = {
         "edges_csv": str(edges_csv),
         "posthoc_csv": str(posthoc_csv),
+        "global_csv": str(global_csv) if global_csv else None,
         "out_dir": str(out_dir),
         "contrasts": contrasts,
         "metrics": metrics or ["imag_coherence"],

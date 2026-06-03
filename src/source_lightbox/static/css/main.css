@@ -749,6 +749,18 @@ main {
   font-size: 12px;
 }
 
+.sig-pairs {
+  font-size: 11px;
+  color: var(--accent-color);
+  background: var(--bg-secondary);
+  border-radius: 9px;
+  padding: 1px 7px;
+}
+.sig-pairs.diffuse {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .sig-none {
   margin: 14px 0 0;
   font-size: 12px;

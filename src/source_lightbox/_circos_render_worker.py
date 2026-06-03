@@ -68,6 +68,16 @@ def main() -> None:
     out_dir = Path(args["out_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Gated post-hoc: region-pair circos are only meaningful where the global
+    # (omnibus) connectivity test is significant. Build the global-significant set.
+    global_sig = set()
+    global_csv = args.get("global_csv")
+    if global_csv and Path(global_csv).exists():
+        g = pd.read_csv(global_csv)
+        gq = pd.to_numeric(g.get("q_value"), errors="coerce")
+        for _, row in g[gq < alpha].iterrows():
+            global_sig.add((row.get("contrast"), row.get("band"), row.get("metric")))
+
     written = []
     for metric in metrics:
         if metric not in edges.columns:
@@ -83,6 +93,9 @@ def main() -> None:
             csub = ph[ph["contrast"] == cname]
             sig_bands = sorted(csub.loc[csub["_sig"], "band"].dropna().unique())
             for band in sig_bands:
+                # Gate on global significance when the global table is available.
+                if global_sig and (cname, band, metric) not in global_sig:
+                    continue
                 band_df = edges[edges["band"] == band]
                 try:
                     mat_a, rl, rn, rs = build_roi_matrix(band_df, roi_categories, metric, group=ga)

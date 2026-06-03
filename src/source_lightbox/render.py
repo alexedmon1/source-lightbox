@@ -591,10 +591,13 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
             if region_tbl is not None:
                 edges_csv = (Path(circos["analytics_dir"]) / paradigm / analysis
                              / "data" / f"{analysis}_edges.csv")
+                # Omnibus table to gate the post-hoc circos on global significance.
+                global_tbl = next((t for t in group if t.filename.lower().endswith("global.csv")), None)
                 if edges_csv.exists():
                     dest.mkdir(parents=True, exist_ok=True)
                     paths = circos_mod.render_circos(
                         edges_csv, region_tbl.src_path, dest, circos["contrasts"],
+                        global_csv=(global_tbl.src_path if global_tbl else None),
                         metrics=circos.get("metrics"),
                         labels=circos.get("labels"), python_path=circos.get("python"), log=log,
                     )

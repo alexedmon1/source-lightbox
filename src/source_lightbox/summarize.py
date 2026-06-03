@@ -95,6 +95,18 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
             "</p></div>"
         )
 
+    # Gated post-hoc: for connectivity (a region-pair table is present), count
+    # significant region pairs per (contrast, band, metric) so each global-
+    # significant effect can be annotated with its localized detail (ties to the
+    # circos). 0 pairs = a diffuse global effect with no surviving region pair.
+    rp_counts: dict[tuple, int] = {}
+    for t in tables:
+        if "region_pair" in t["headers"]:
+            for r in _records(t["headers"], t["rows"]):
+                if _is_sig(r):
+                    key = (r.get("contrast"), r.get("band"), r.get("metric"))
+                    rp_counts[key] = rp_counts.get(key, 0) + 1
+
     # Build one list item per significant contrast (keyed for later grouping).
     item_by_contrast: dict[str, str] = {}
     n_findings = 0
@@ -111,9 +123,14 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
             facet = ""
             if facet_col and rec.get(facet_col):
                 facet = ' <span class="sig-facet">' + escape(str(rec[facet_col])) + "</span>"
+            pairs = ""
+            if rp_counts:  # connectivity: annotate with gated region-pair detail
+                n = rp_counts.get((contrast, rec.get(cat), rec.get(facet_col) if facet_col else None), 0)
+                pairs = (' <span class="sig-pairs">' + f"{n} region pair{'s' if n != 1 else ''}" + "</span>"
+                         if n else ' <span class="sig-pairs diffuse">diffuse</span>')
             chips.append(
                 f'<span class="sig-item"><span class="arrow {direction}">{arrow}</span> '
-                f'{band}{facet} <span class="g">g={abs(g):.2f}</span></span>'
+                f'{band}{facet} <span class="g">g={abs(g):.2f}</span>{pairs}</span>'
             )
             n_findings += 1
         item_by_contrast[contrast] = (
