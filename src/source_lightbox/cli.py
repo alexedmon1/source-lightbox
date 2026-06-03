@@ -117,6 +117,8 @@ def build(
     # Contrast name -> readable label / tier group (read from --config).
     contrast_labels = None
     contrast_groups = None
+    # Contrast name + groups (for connectivity circos).
+    contrast_pairs = None
 
     # If --config provided, read paths from unified study.yaml
     if config_file is not None:
@@ -181,6 +183,11 @@ def build(
             contrast_labels = {c["name"]: c["label"] for c in study_contrasts if c.get("label")} or None
         if contrast_groups is None:
             contrast_groups = {c["name"]: c["group"] for c in study_contrasts if c.get("group")} or None
+        if contrast_pairs is None:
+            contrast_pairs = [
+                {"name": c["name"], "group_a": c["group_a"], "group_b": c["group_b"]}
+                for c in study_contrasts if c.get("group_a") and c.get("group_b")
+            ] or None
         # ROI categories YAML: explicit path, else conventional file beside config.
         if roi_categories is None:
             cfg_cats = paths.get("roi_categories")
@@ -249,6 +256,7 @@ def build(
         contrasts=contrasts,
         contrast_labels=contrast_labels,
         contrast_groups=contrast_groups,
+        contrast_pairs=contrast_pairs,
     )
 
     from .builder import build as do_build

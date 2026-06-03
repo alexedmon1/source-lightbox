@@ -45,6 +45,17 @@ convention. The lightbox renders figures at build time:
   primary `power_type` (default `relative`). FORGE roi_psd → 5 mosaics (was 120+).
 - Contrast **labels** come from `contrasts[].label` in the YAML (required, no
   auto-prettify) and apply everywhere: digest, heatmap axes, mosaic titles.
+- **Connectivity circos** for modules with a `*_posthoc_region_pair` table:
+  significance chord diagrams (32 ROIs grouped/colored by their 10 anatomical
+  regions, Yeo-style) showing the group difference — direction + magnitude — with
+  FDR-significant region pairs opaque. Delegated to source-analytics
+  (`viz.connectivity_plots`) via a subprocess (`circos.py` +
+  `_circos_render_worker.py`), reading the edge CSV from the analytics dir + the
+  region-pair posthoc table. Curated to significant `(contrast, band)` for the
+  primary metric (`circos_metric`, default `imag_coherence`). The worker picks
+  the atlas `roi_categories.yaml` whose ROI names match the edges (the atlas ships
+  several granularities; only the 32-ROI one matches). Needs `contrast_pairs`
+  (name + group_a/group_b) from the study config.
 
 ## Summaries: generated digest, not the verbatim report
 

@@ -79,9 +79,19 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
                 "power_type": config.brain_power_type,
             }
 
+        circos = None
+        if config.circos_render and config.analytics_dir and config.contrast_pairs:
+            circos = {
+                "analytics_dir": str(config.analytics_dir),
+                "contrasts": config.contrast_pairs,
+                "labels": config.contrast_labels,
+                "metric": config.circos_metric,
+                "python": config.brain_python,
+            }
+
         rendered = render_table_figures(
             scan.tables, staging_dir, dpi=config.figure_dpi, log=_log,
-            brain=brain, contrast_labels=config.contrast_labels,
+            brain=brain, circos=circos, contrast_labels=config.contrast_labels,
         )
         scan.figures.extend(rendered)
         _log(f"  Rendered {len(rendered)} figures from {len(scan.tables)} tables")

@@ -40,6 +40,10 @@ class BuildConfig:
     contrast_labels: dict | None = None   # contrast name -> readable label
     contrast_groups: dict | None = None   # contrast name -> tier/group label
     brain_power_type: str = "relative"    # power_type filter for ROI mosaics
+    # Connectivity circos (delegated to source-analytics)
+    circos_render: bool = True
+    contrast_pairs: list | None = None    # [{name, group_a, group_b}] for circos
+    circos_metric: str = "imag_coherence"
 
     def __post_init__(self):
         self.output_dir = Path(self.output_dir)

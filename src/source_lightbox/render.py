@@ -545,7 +545,7 @@ def _analysis_key(analysis: str) -> str:
 
 
 def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k: None,
-                         brain=None, contrast_labels=None):
+                         brain=None, circos=None, contrast_labels=None):
     """Render figures per analysis module.
 
     Tables are grouped by ``(source_label, paradigm, analysis)``. For ROI modules
@@ -565,7 +565,7 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
     for tbl in tables:
         modules.setdefault((tbl.source_label, tbl.paradigm, tbl.analysis), []).append(tbl)
 
-    # Brain mosaics are optional and require source-analytics.
+    # Brain mosaics and circos are optional and require source-analytics.
     brain_ok = False
     if brain and brain.get("categories"):
         from . import brain_mosaic
@@ -574,9 +574,36 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
         if not brain_ok:
             log("  (brain mosaics unavailable — source-analytics not found; using heatmaps)")
 
+    circos_ok = False
+    if circos and circos.get("contrasts"):
+        from . import circos as circos_mod
+
+        circos_ok = circos_mod.circos_available(circos.get("python"))
+
     figures: list[FigureEntry] = []
     for (source, paradigm, analysis), group in modules.items():
         dest = staging / _slugify(source) / paradigm / analysis
+
+        # 0. Connectivity circos: significance chord diagrams (32 ROIs grouped by
+        #    region) for modules with a region-pair posthoc table + edge data.
+        if circos_ok:
+            region_tbl = next((t for t in group if "posthoc_region_pair" in t.filename.lower()), None)
+            if region_tbl is not None:
+                edges_csv = (Path(circos["analytics_dir"]) / paradigm / analysis
+                             / "data" / f"{analysis}_edges.csv")
+                if edges_csv.exists():
+                    dest.mkdir(parents=True, exist_ok=True)
+                    paths = circos_mod.render_circos(
+                        edges_csv, region_tbl.src_path, dest, circos["contrasts"],
+                        metric=circos.get("metric", "imag_coherence"),
+                        labels=circos.get("labels"), python_path=circos.get("python"), log=log,
+                    )
+                    if paths:
+                        for path in paths:
+                            figures.append(FigureEntry(
+                                src_path=path, category="analytics", source_label=source,
+                                paradigm=paradigm, analysis=analysis, filename=path.name))
+                        continue  # circos stand in for this module's overview
 
         # 1. Brain mosaics for ROI posthoc modules (replace the flat overview).
         if brain_ok:
