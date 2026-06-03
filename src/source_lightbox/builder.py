@@ -58,6 +58,19 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
     # 2. Prepare output directory
     out.mkdir(parents=True, exist_ok=True)
 
+    # 2b. Render standardized figures from tables (staged, then treated like any
+    #     other discovered figure by the copy/thumbnail/manifest steps below).
+    staging_dir = out / ".rendered"
+    if config.render_figures and scan.tables:
+        _log("Rendering figures from tables...")
+        from .render import render_table_figures
+
+        rendered = render_table_figures(
+            scan.tables, staging_dir, dpi=config.figure_dpi, log=_log
+        )
+        scan.figures.extend(rendered)
+        _log(f"  Rendered {len(rendered)} figures from {len(scan.tables)} tables")
+
     # 3. Copy figures
     _log("Copying figures...")
     for fig in scan.figures:
@@ -110,6 +123,10 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
     # 8. Copy static assets
     _log("Copying static assets...")
     _copy_static(out)
+
+    # 9. Clean up staged renders (already copied into figures/ above)
+    if staging_dir.exists():
+        shutil.rmtree(staging_dir, ignore_errors=True)
 
     _log(f"Gallery built: {out}")
     _log(f"  {manifest['stats']['total_figures']} figures")

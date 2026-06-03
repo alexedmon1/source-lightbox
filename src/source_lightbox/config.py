@@ -30,6 +30,8 @@ class BuildConfig:
     thumb_quality: int = 80
     thumb_workers: int = 4
     max_table_rows: int = 500
+    render_figures: bool = True
+    figure_dpi: int = 150
 
     def __post_init__(self):
         self.output_dir = Path(self.output_dir)

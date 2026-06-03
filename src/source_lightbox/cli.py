@@ -68,6 +68,12 @@ def main():
 @click.option("--thumb-size", default=300, type=int, help="Thumbnail max dimension.")
 @click.option("--thumb-quality", default=80, type=int, help="Thumbnail JPEG quality.")
 @click.option("--thumb-workers", default=4, type=int, help="Parallel thumbnail workers.")
+@click.option(
+    "--render-figures/--no-render-figures",
+    default=True,
+    help="Render standardized figures from stat tables at build time.",
+)
+@click.option("--figure-dpi", default=150, type=int, help="DPI for rendered figures.")
 @click.option("--verbose/--quiet", default=True, help="Verbose output.")
 def build(
     config_file,
@@ -80,10 +86,15 @@ def build(
     thumb_size,
     thumb_quality,
     thumb_workers,
+    render_figures,
+    figure_dpi,
     verbose,
 ):
     """Build a static gallery from analysis outputs."""
     import yaml as _yaml
+
+    # Labeled localization inputs supplied via --config (CLI flags take precedence).
+    config_loc_inputs = []
 
     # If --config provided, read paths from unified study.yaml
     if config_file is not None:
@@ -100,13 +111,27 @@ def build(
             resolved = pp if pp.is_absolute() else (config_dir / pp).resolve()
             return str(resolved)
 
-        cfg_loc = _resolve(paths.get("localization"), "./localization")
         cfg_results = _resolve(paths.get("results"), "./results")
         cfg_analytics = _resolve(paths.get("analytics"), "./analytics")
 
+        # Localization: a list of {path, label} (comparison mode) or a scalar path.
+        loc_spec = paths.get("localizations")
+        if loc_spec:
+            for entry in loc_spec:
+                if isinstance(entry, dict):
+                    lp = _resolve(entry.get("path"), "")
+                    lbl = entry.get("label") or Path(lp).name
+                else:
+                    lp = _resolve(entry, "")
+                    lbl = Path(lp).name
+                if Path(lp).is_dir():
+                    config_loc_inputs.append(SourceInput(path=lp, label=lbl))
+        else:
+            cfg_loc = _resolve(paths.get("localization"), "./localization")
+            if Path(cfg_loc).is_dir():
+                config_loc_inputs.append(SourceInput(path=cfg_loc, label="Localization"))
+
         # Merge: CLI flags take precedence over config
-        if not localizations:
-            localizations = (cfg_loc,) if Path(cfg_loc).is_dir() else ()
         if not results_dirs:
             results_dirs = (cfg_results,) if Path(cfg_results).is_dir() else ()
         if analytics is None and Path(cfg_analytics).is_dir():
@@ -147,6 +172,10 @@ def build(
         else:
             res_inputs.append(si)
 
+    # Fall back to config-provided labeled localizations when none given on the CLI.
+    if not loc_inputs and config_loc_inputs:
+        loc_inputs = config_loc_inputs
+
     config = BuildConfig(
         output_dir=output,
         title=title,
@@ -156,6 +185,8 @@ def build(
         thumb_size=thumb_size,
         thumb_quality=thumb_quality,
         thumb_workers=thumb_workers,
+        render_figures=render_figures,
+        figure_dpi=figure_dpi,
     )
 
     from .builder import build as do_build
