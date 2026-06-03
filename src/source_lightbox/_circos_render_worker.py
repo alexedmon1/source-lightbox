@@ -82,29 +82,33 @@ def main() -> None:
     for metric in metrics:
         if metric not in edges.columns:
             continue
-        ph = posthoc[posthoc["metric"] == metric] if "metric" in posthoc.columns else posthoc
-        ph = ph.copy()
-        ph["_sig"] = pd.to_numeric(ph.get("q_value"), errors="coerce") < alpha
+        mph = posthoc[posthoc["metric"] == metric] if "metric" in posthoc.columns else posthoc
 
         for con in args["contrasts"]:
             cname, ga, gb = con["name"], con.get("group_a"), con.get("group_b")
             if not ga or not gb:
                 continue
-            csub = ph[ph["contrast"] == cname]
-            sig_bands = sorted(csub.loc[csub["_sig"], "band"].dropna().unique())
-            for band in sig_bands:
-                # Gate on global significance when the global table is available.
-                if global_sig and (cname, band, metric) not in global_sig:
-                    continue
+            # Bands to consider = where the GLOBAL (omnibus) test is FDR-significant
+            # (the gated family). Fall back to all bands if no global table given.
+            if global_sig:
+                bands = sorted({bb for (cc, bb, mm) in global_sig if cc == cname and mm == metric})
+            else:
+                bands = sorted(mph.loc[mph["contrast"] == cname, "band"].dropna().unique())
+            # Contrast-specific posthoc (build_significance_matrix keys on band/metric,
+            # not contrast, so it must be filtered here).
+            cph = posthoc[posthoc["contrast"] == cname]
+            for band in bands:
                 band_df = edges[edges["band"] == band]
                 try:
                     mat_a, rl, rn, rs = build_roi_matrix(band_df, roi_categories, metric, group=ga)
                     mat_b, *_ = build_roi_matrix(band_df, roi_categories, metric, group=gb)
+                    # Protected post-hoc: region pairs at uncorrected p<0.05 within
+                    # the FDR-significant omnibus (the gate provides the correction).
                     sig = build_significance_matrix(
-                        posthoc, rl, rn, rs, band, metric, p_col="q_value", alpha=alpha
+                        cph, rl, rn, rs, band, metric, p_col="p_value", alpha=alpha
                     )
                     if sig is None or not sig.any():
-                        continue
+                        continue  # truly diffuse — no suprathreshold pair to localize
                     label = labels.get(cname, cname)
                     # `__`-delimited so the gallery can group by metric / band /
                     # contrast (each field may itself contain single underscores).

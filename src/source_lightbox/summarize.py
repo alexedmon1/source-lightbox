@@ -57,7 +57,8 @@ def _category_column(headers: list[str], records: list[dict]) -> str | None:
 
 
 def build_significance_summary(tables: list[dict], contrast_labels: dict | None = None,
-                               contrast_groups: dict | None = None) -> str | None:
+                               contrast_groups: dict | None = None,
+                               region_pair_table: dict | None = None) -> str | None:
     """Return concise HTML summarizing significant effects by contrast, or None.
 
     ``tables`` are embedded table dicts: ``{filename, headers, rows}``.
@@ -95,17 +96,25 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
             "</p></div>"
         )
 
-    # Gated post-hoc: for connectivity (a region-pair table is present), count
-    # significant region pairs per (contrast, band, metric) so each global-
-    # significant effect can be annotated with its localized detail (ties to the
-    # circos). 0 pairs = a diffuse global effect with no surviving region pair.
+    # Protected post-hoc: for connectivity (a region-pair table is present), count
+    # region pairs at uncorrected p<0.05 per (contrast, band, metric) — these are
+    # the localized findings the circos show within an FDR-significant omnibus. The
+    # global effect (this digest's rows) provides the family-wise correction.
+    # 0 pairs = a diffuse global effect with no suprathreshold pair.
+    # Prefer the full region-pair table (the embedded one in `tables` may be
+    # row-truncated for the gallery, which would undercount).
+    rp_source = region_pair_table
+    if rp_source is None:
+        rp_source = next((t for t in tables
+                          if "region_pair" in t["headers"] and "p_value" in t["headers"]), None)
     rp_counts: dict[tuple, int] = {}
-    for t in tables:
-        if "region_pair" in t["headers"]:
-            for r in _records(t["headers"], t["rows"]):
-                if _is_sig(r):
-                    key = (r.get("contrast"), r.get("band"), r.get("metric"))
-                    rp_counts[key] = rp_counts.get(key, 0) + 1
+    has_region_pairs = rp_source is not None
+    if rp_source is not None:
+        for r in _records(rp_source["headers"], rp_source["rows"]):
+            p = _to_float(r.get("p_value"))
+            if p is not None and p < 0.05:
+                key = (r.get("contrast"), r.get("band"), r.get("metric"))
+                rp_counts[key] = rp_counts.get(key, 0) + 1
 
     # Build one list item per significant contrast (keyed for later grouping).
     item_by_contrast: dict[str, str] = {}
@@ -124,7 +133,7 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
             if facet_col and rec.get(facet_col):
                 facet = ' <span class="sig-facet">' + escape(str(rec[facet_col])) + "</span>"
             pairs = ""
-            if rp_counts:  # connectivity: annotate with gated region-pair detail
+            if has_region_pairs:  # connectivity: annotate with gated region-pair detail
                 n = rp_counts.get((contrast, rec.get(cat), rec.get(facet_col) if facet_col else None), 0)
                 pairs = (' <span class="sig-pairs">' + f"{n} region pair{'s' if n != 1 else ''}" + "</span>"
                          if n else ' <span class="sig-pairs diffuse">diffuse</span>')
@@ -171,6 +180,13 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
         "(FDR q &lt; 0.05). <span class=\"sig-key\">&#9650; first group higher, "
         "&#9660; lower</span>.</p>"
     )
+    if has_region_pairs:
+        html += (
+            '<p class="sig-note">Region-pair counts are protected post-hocs '
+            "(uncorrected p &lt; 0.05) within each FDR-significant omnibus; "
+            "<em>diffuse</em> = no suprathreshold region pair. Each non-diffuse "
+            "effect has a circos in the Figures tab.</p>"
+        )
     html += body
     if null_contrasts:
         html += (

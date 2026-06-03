@@ -691,6 +691,12 @@ main {
   font-size: 12px;
 }
 
+.sig-note {
+  margin: -8px 0 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .sig-group {
   font-size: 13px;
   font-weight: 700;

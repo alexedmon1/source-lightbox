@@ -109,6 +109,16 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
     # each module's effect-size table, NOT the verbose ANALYSIS_SUMMARY.md verbatim.
     from .summarize import build_significance_summary
 
+    # Full (untruncated) region-pair tables, by module — the embedded copies may
+    # be row-capped, which would undercount post-hoc region pairs in the digest.
+    region_pair_full: dict[tuple, dict] = {}
+    for tbl in scan.tables:
+        if "region_pair" in tbl.filename:
+            try:
+                region_pair_full[(tbl.paradigm, tbl.analysis)] = _read_csv(tbl.src_path)
+            except Exception:  # noqa: BLE001
+                pass
+
     n_summaries = 0
     for paradigm, analyses in manifest["paradigms"].items():
         for analysis, entry in analyses.items():
@@ -116,7 +126,8 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
             for src_tables in entry["tables"].values():
                 module_tables.extend(src_tables)
             summary_html = build_significance_summary(
-                module_tables, contrast_labels=contrast_labels, contrast_groups=contrast_groups)
+                module_tables, contrast_labels=contrast_labels, contrast_groups=contrast_groups,
+                region_pair_table=region_pair_full.get((paradigm, analysis)))
             entry["summary"] = summary_html
             if summary_html:
                 n_summaries += 1
