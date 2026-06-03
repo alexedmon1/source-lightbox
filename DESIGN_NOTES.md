@@ -51,11 +51,14 @@ convention. The lightbox renders figures at build time:
   FDR-significant region pairs opaque. Delegated to source-analytics
   (`viz.connectivity_plots`) via a subprocess (`circos.py` +
   `_circos_render_worker.py`), reading the edge CSV from the analytics dir + the
-  region-pair posthoc table. Curated to significant `(contrast, band)` for the
-  primary metric (`circos_metric`, default `imag_coherence`). The worker picks
-  the atlas `roi_categories.yaml` whose ROI names match the edges (the atlas ships
-  several granularities; only the 32-ROI one matches). Needs `contrast_pairs`
-  (name + group_a/group_b) from the study config.
+  region-pair posthoc table. Rendered for each metric in `circos_metrics` (YAML
+  list; default imag_coherence) × significant `(contrast, band)`. Shown in the
+  gallery as **metric sub-tabs → band rows → small click-to-enlarge thumbnails**
+  (filenames `circos__<metric>__<band>__<contrast>.png` so the JS groups them).
+  The worker picks the atlas `roi_categories.yaml` whose ROI names match the edges
+  (the atlas ships several granularities; only the 32-ROI one matches). Needs
+  `contrast_pairs` (name + group_a/group_b) from the study config. Region names
+  render as a staggered tangential ring between the ROI nodes and ROI labels.
 
 ## Summaries: generated digest, not the verbatim report
 

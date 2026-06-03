@@ -314,9 +314,11 @@
       figPanel = renderComparisonGrid(data, sourcesWithFigs);
       figCount = sourcesWithFigs.reduce(function (n, s) { return n + data.figures[s].length; }, 0);
     } else if (figs.length > 0) {
-      // Full-width titled rows (same as localization) so analysis figures are
-      // readable inline, not tiny thumbnails.
-      figPanel = renderFigureRows(figs);
+      // Circos sets get a metric-tab / band-row layout of small click-to-enlarge
+      // plots; everything else gets full-width titled rows.
+      figPanel = (figs[0].filename.indexOf("circos__") === 0)
+        ? renderCircosFigures(figs)
+        : renderFigureRows(figs);
     }
 
     var tableSource = data.tables[source] ? source : Object.keys(data.tables)[0];
@@ -364,6 +366,7 @@
     initLightbox();
     bindTableToggles(tables);
     bindTabs();
+    bindMetricTabs();
   }
 
   function bindTabs() {
@@ -671,6 +674,98 @@
     }
     html += "</div>";
     return html;
+  }
+
+  /* ── Circos figures: metric tabs → band rows → small click-to-enlarge plots ── */
+  var BAND_ORDER = ["Delta", "Theta", "Alpha", "Beta", "Low Gamma", "High Gamma", "Epsilon"];
+  var METRIC_ORDER = ["imag_coherence", "dwpli", "pli", "aec", "coherence"];
+  var METRIC_LABELS = {
+    imag_coherence: "Imag. coherence", coherence: "Coherence",
+    dwpli: "dwPLI", pli: "PLI", aec: "AEC",
+  };
+  var CONTRAST_UPPER = { hd: "HD", icv: "ICV", iv: "IV", ld: "LD", wt: "WT", veh: "Veh" };
+
+  function metricLabel(m) { return METRIC_LABELS[m] || formatName(m); }
+
+  function circosContrastLabel(name) {
+    return name.split("_").map(function (t) {
+      var l = t.toLowerCase();
+      if (CONTRAST_UPPER[l]) return CONTRAST_UPPER[l];
+      if (l === "vs") return "vs";
+      return t.charAt(0).toUpperCase() + t.slice(1);
+    }).join(" ");
+  }
+
+  function parseCircos(filename) {
+    var base = (filename || "").replace(/\.png$/i, "");
+    if (base.indexOf("circos__") !== 0) return null;
+    var parts = base.slice("circos__".length).split("__");
+    if (parts.length < 3) return null;
+    return { metric: parts[0], band: parts[1], contrast: parts.slice(2).join("__") };
+  }
+
+  function orderBands(bands) {
+    return bands.slice().sort(function (a, b) {
+      var ia = BAND_ORDER.indexOf(formatName(a)); if (ia < 0) ia = 99;
+      var ib = BAND_ORDER.indexOf(formatName(b)); if (ib < 0) ib = 99;
+      return ia - ib || a.localeCompare(b);
+    });
+  }
+
+  function renderCircosFigures(figs) {
+    var byMetric = {};
+    figs.forEach(function (f) {
+      var p = parseCircos(f.filename);
+      if (!p) return;
+      byMetric[p.metric] = byMetric[p.metric] || {};
+      (byMetric[p.metric][p.band] = byMetric[p.metric][p.band] || []).push({ fig: f, contrast: p.contrast });
+    });
+    var metrics = Object.keys(byMetric);
+    if (!metrics.length) return renderFigureRows(figs);
+    metrics.sort(function (a, b) {
+      var ia = METRIC_ORDER.indexOf(a); if (ia < 0) ia = 99;
+      var ib = METRIC_ORDER.indexOf(b); if (ib < 0) ib = 99;
+      return ia - ib || a.localeCompare(b);
+    });
+
+    var html = '<div class="metric-tabs" role="tablist">';
+    metrics.forEach(function (m, i) {
+      html += '<button class="metric-tab' + (i === 0 ? " active" : "") + '" data-mtab="' +
+        escapeHtml(m) + '">' + escapeHtml(metricLabel(m)) + "</button>";
+    });
+    html += "</div>";
+
+    metrics.forEach(function (m, i) {
+      html += '<div class="metric-panel' + (i === 0 ? " active" : "") + '" data-mpanel="' + escapeHtml(m) + '">';
+      orderBands(Object.keys(byMetric[m])).forEach(function (band) {
+        html += '<div class="band-block"><h4 class="band-title">' + escapeHtml(formatName(band)) + "</h4>";
+        html += '<div class="band-figs">';
+        byMetric[m][band].forEach(function (it) {
+          html += '<figure class="circos-thumb">' +
+            '<a class="glightbox" href="' + it.fig.path + '" data-gallery="gallery">' +
+            '<img src="' + it.fig.thumb + '" loading="lazy" alt="' + escapeHtml(it.fig.filename) + '"></a>' +
+            '<figcaption>' + escapeHtml(circosContrastLabel(it.contrast)) + "</figcaption></figure>";
+        });
+        html += "</div></div>";
+      });
+      html += "</div>";
+    });
+    return html;
+  }
+
+  function bindMetricTabs() {
+    document.querySelectorAll(".metric-tabs").forEach(function (bar) {
+      var container = bar.parentNode;
+      bar.querySelectorAll(".metric-tab").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var id = btn.getAttribute("data-mtab");
+          bar.querySelectorAll(".metric-tab").forEach(function (b) { b.classList.toggle("active", b === btn); });
+          container.querySelectorAll(".metric-panel").forEach(function (p) {
+            p.classList.toggle("active", p.getAttribute("data-mpanel") === id);
+          });
+        });
+      });
+    });
   }
 
   window._showMore = function (btn) {

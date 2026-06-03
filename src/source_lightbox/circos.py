@@ -31,9 +31,9 @@ def circos_available(python_path=None) -> bool:
 
 
 def render_circos(edges_csv, posthoc_csv, out_dir, contrasts, *,
-                  metric="imag_coherence", labels=None, alpha=0.05,
+                  metrics=None, labels=None, alpha=0.05,
                   python_path=None, log=lambda *a, **k: None):
-    """Render significance circos for each significant (contrast, band).
+    """Render significance circos for each metric × significant (contrast, band).
 
     Returns the list of written PNG paths (empty on any failure — never raises).
     """
@@ -43,7 +43,7 @@ def render_circos(edges_csv, posthoc_csv, out_dir, contrasts, *,
         "posthoc_csv": str(posthoc_csv),
         "out_dir": str(out_dir),
         "contrasts": contrasts,
-        "metric": metric,
+        "metrics": metrics or ["imag_coherence"],
         "labels": labels,
         "alpha": alpha,
     }

@@ -43,7 +43,7 @@ class BuildConfig:
     # Connectivity circos (delegated to source-analytics)
     circos_render: bool = True
     contrast_pairs: list | None = None    # [{name, group_a, group_b}] for circos
-    circos_metric: str = "imag_coherence"
+    circos_metrics: list | None = None    # connectivity metrics to render (None = imag_coherence)
 
     def __post_init__(self):
         self.output_dir = Path(self.output_dir)

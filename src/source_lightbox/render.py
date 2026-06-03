@@ -595,7 +595,7 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
                     dest.mkdir(parents=True, exist_ok=True)
                     paths = circos_mod.render_circos(
                         edges_csv, region_tbl.src_path, dest, circos["contrasts"],
-                        metric=circos.get("metric", "imag_coherence"),
+                        metrics=circos.get("metrics"),
                         labels=circos.get("labels"), python_path=circos.get("python"), log=log,
                     )
                     if paths:

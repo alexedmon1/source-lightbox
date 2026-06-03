@@ -62,46 +62,47 @@ def main() -> None:
     if not roi_categories:
         print(json.dumps([]))
         return
-    metric = args.get("metric", "imag_coherence")
+    metrics = args.get("metrics") or [args.get("metric", "imag_coherence")]
     alpha = float(args.get("alpha", 0.05))
     labels = args.get("labels") or {}
     out_dir = Path(args["out_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if metric not in edges.columns:
-        print(json.dumps([]))
-        return
-
-    ph = posthoc[posthoc["metric"] == metric] if "metric" in posthoc.columns else posthoc
-    ph = ph.copy()
-    ph["_sig"] = pd.to_numeric(ph.get("q_value"), errors="coerce") < alpha
-
     written = []
-    for con in args["contrasts"]:
-        cname, ga, gb = con["name"], con.get("group_a"), con.get("group_b")
-        if not ga or not gb:
+    for metric in metrics:
+        if metric not in edges.columns:
             continue
-        csub = ph[ph["contrast"] == cname]
-        sig_bands = sorted(csub.loc[csub["_sig"], "band"].dropna().unique())
-        for band in sig_bands:
-            band_df = edges[edges["band"] == band]
-            try:
-                mat_a, rl, rn, rs = build_roi_matrix(band_df, roi_categories, metric, group=ga)
-                mat_b, *_ = build_roi_matrix(band_df, roi_categories, metric, group=gb)
-                sig = build_significance_matrix(
-                    posthoc, rl, rn, rs, band, metric, p_col="q_value", alpha=alpha
-                )
-                if sig is None or not sig.any():
-                    continue
-                label = labels.get(cname, cname)
-                out = out_dir / f"circos_{cname}_{band.replace(' ', '_')}.png"
-                plot_significance_circos(
-                    mat_a, mat_b, rl, rn, rs, sig, out,
-                    group_labels=(ga, gb), title=f"{label} — {band} ({metric})",
-                )
-                written.append(str(out))
-            except Exception as exc:  # noqa: BLE001
-                sys.stderr.write(f"circos fail {cname}/{band}: {exc}\n")
+        ph = posthoc[posthoc["metric"] == metric] if "metric" in posthoc.columns else posthoc
+        ph = ph.copy()
+        ph["_sig"] = pd.to_numeric(ph.get("q_value"), errors="coerce") < alpha
+
+        for con in args["contrasts"]:
+            cname, ga, gb = con["name"], con.get("group_a"), con.get("group_b")
+            if not ga or not gb:
+                continue
+            csub = ph[ph["contrast"] == cname]
+            sig_bands = sorted(csub.loc[csub["_sig"], "band"].dropna().unique())
+            for band in sig_bands:
+                band_df = edges[edges["band"] == band]
+                try:
+                    mat_a, rl, rn, rs = build_roi_matrix(band_df, roi_categories, metric, group=ga)
+                    mat_b, *_ = build_roi_matrix(band_df, roi_categories, metric, group=gb)
+                    sig = build_significance_matrix(
+                        posthoc, rl, rn, rs, band, metric, p_col="q_value", alpha=alpha
+                    )
+                    if sig is None or not sig.any():
+                        continue
+                    label = labels.get(cname, cname)
+                    # `__`-delimited so the gallery can group by metric / band /
+                    # contrast (each field may itself contain single underscores).
+                    out = out_dir / f"circos__{metric}__{band.replace(' ', '_')}__{cname}.png"
+                    plot_significance_circos(
+                        mat_a, mat_b, rl, rn, rs, sig, out,
+                        group_labels=(ga, gb), title=f"{label} — {band} ({metric})",
+                    )
+                    written.append(str(out))
+                except Exception as exc:  # noqa: BLE001
+                    sys.stderr.write(f"circos fail {metric}/{cname}/{band}: {exc}\n")
 
     print(json.dumps(written))
 

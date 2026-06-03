@@ -85,7 +85,7 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
                 "analytics_dir": str(config.analytics_dir),
                 "contrasts": config.contrast_pairs,
                 "labels": config.contrast_labels,
-                "metric": config.circos_metric,
+                "metrics": config.circos_metrics,
                 "python": config.brain_python,
             }
 

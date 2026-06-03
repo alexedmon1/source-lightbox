@@ -119,6 +119,8 @@ def build(
     contrast_groups = None
     # Contrast name + groups (for connectivity circos).
     contrast_pairs = None
+    # Connectivity metrics to render as circos (from --config).
+    circos_metrics = None
 
     # If --config provided, read paths from unified study.yaml
     if config_file is not None:
@@ -188,6 +190,9 @@ def build(
                 {"name": c["name"], "group_a": c["group_a"], "group_b": c["group_b"]}
                 for c in study_contrasts if c.get("group_a") and c.get("group_b")
             ] or None
+        if circos_metrics is None:
+            cm = study_cfg.get("circos_metrics")
+            circos_metrics = list(cm) if cm else None
         # ROI categories YAML: explicit path, else conventional file beside config.
         if roi_categories is None:
             cfg_cats = paths.get("roi_categories")
@@ -257,6 +262,7 @@ def build(
         contrast_labels=contrast_labels,
         contrast_groups=contrast_groups,
         contrast_pairs=contrast_pairs,
+        circos_metrics=circos_metrics,
     )
 
     from .builder import build as do_build
