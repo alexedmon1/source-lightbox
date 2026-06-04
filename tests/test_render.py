@@ -8,6 +8,7 @@ from source_lightbox.render import (
     MvpaHeatmap,
     NbsComponentPlot,
     RoiBandHeatmap,
+    RoiGraphMetricHeatmap,
     SummaryHeatmap,
     render_table_figures,
     select_renderer,
@@ -31,6 +32,78 @@ def test_select_renderer_dispatch():
     assert select_renderer("contrast,band,cluster_stat,p_corrected".split(",")) is ClusterHeatmap
     assert select_renderer("contrast,band,max_abs_hedges_g,n_nominal_sig".split(",")) is SummaryHeatmap
     assert select_renderer("key,component,n_edges,p_corrected".split(",")) is NbsComponentPlot
+
+
+def test_graph_metric_dispatch():
+    # The nodal graph-metric table (t/p_fdr per ROI) -> its own renderer, and it
+    # must NOT shadow the NBS table that shares the same module.
+    headers = "contrast,band,conn_metric,graph_metric,roi,mean_a,mean_b,t,p,p_fdr".split(",")
+    assert select_renderer(headers) is RoiGraphMetricHeatmap
+    assert select_renderer("key,component,n_edges,p_corrected".split(",")) is NbsComponentPlot
+
+
+def _graph_records():
+    headers = "contrast,band,conn_metric,graph_metric,roi,t,p,p_fdr".split(",")
+    records = []
+    for contrast in ("disease_effect", "hd_icv_rescue"):
+        for conn in ("imag_coherence", "aec"):
+            for gm in ("degree", "clustering", "betweenness"):
+                for band in ("Delta", "Low Gamma"):
+                    for roi in ("Auditory_L", "Motor_R"):
+                        records.append({
+                            "contrast": contrast, "band": band, "conn_metric": conn,
+                            "graph_metric": gm, "roi": roi, "t": "2.1",
+                            "p": "0.03", "p_fdr": "0.02" if roi == "Motor_R" else "0.9",
+                        })
+    return headers, records
+
+
+def test_graph_metric_overview_one_per_graph_metric(tmp_path):
+    headers, records = _graph_records()
+    # Overview collapses to the preferred contrast + connectivity metric, leaving
+    # one ROIxband figure per graph metric (degree / clustering / betweenness).
+    over = RoiGraphMetricHeatmap.render(records, headers, tmp_path, "roi_network_stats",
+                                        dpi=72, overview=True)
+    assert len(over) == 3
+    assert all(p.exists() for p in over)
+    names = " ".join(p.name for p in over)
+    assert "degree" in names and "clustering" in names and "betweenness" in names
+    assert all("disease_effect" in p.name for p in over)  # preferred contrast
+
+
+def test_graph_metric_full_spans_contrasts(tmp_path):
+    headers, records = _graph_records()
+    # Without overview: still one connectivity metric, but every contrast x metric.
+    full = RoiGraphMetricHeatmap.render(records, headers, tmp_path, "roi_network_stats",
+                                        dpi=72, overview=False)
+    assert len(full) == 6  # 2 contrasts x 3 graph metrics
+
+
+def test_render_network_module_nbs_plus_graph(tmp_path):
+    # A roi_network module carries NBS results AND the nodal graph-metric table;
+    # both should render (graph metrics alongside the NBS overview).
+    base = tmp_path / "tables" / "resting" / "roi_network"
+    nbs = _write_csv(
+        base / "roi_nbs_results.csv",
+        "key,component,n_edges,p_corrected",
+        ["disease_effect_Delta_imag_coherence,1,12,0.03"],
+    )
+    headers, records = _graph_records()
+    stats = _write_csv(
+        base / "roi_network_stats.csv",
+        ",".join(headers),
+        [",".join(r[c] for c in headers) for r in records],
+    )
+
+    def te(p):
+        return TableEntry(src_path=p, source_label="Allen ROI", paradigm="resting",
+                          analysis="roi_network", filename=p.name)
+
+    figures = render_table_figures([te(nbs), te(stats)], tmp_path / ".rendered", dpi=72)
+    assert {f.analysis for f in figures} == {"roi_network"}
+    names = " ".join(f.filename for f in figures)
+    assert "nbs" in names  # NBS overview present
+    assert "degree" in names and "clustering" in names  # nodal graph maps present
 
 
 def test_per_vertex_table_not_matched():

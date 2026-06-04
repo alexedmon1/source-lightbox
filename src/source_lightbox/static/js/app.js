@@ -752,6 +752,21 @@
     return html;
   }
 
+  // The facet that distinguishes one figure in a module from the next — band
+  // (Delta…), aperiodic measure (exponent/offset), or power type. Surfaced up
+  // front so a reader can tell figures apart at a glance instead of hunting the
+  // end of the title. Bands come from BAND_ORDER (defined below; available at
+  // call time).
+  function _figureFacet(name) {
+    var measures = ["Exponent", "Offset", "Relative", "Absolute"];
+    var facets = BAND_ORDER.concat(measures);  // bands first — prefer the band
+    for (var i = 0; i < facets.length; i++) {
+      var re = new RegExp("(^|\\s)" + facets[i].replace(/ /g, "\\s") + "(\\s|$)", "i");
+      if (re.test(name)) return { facet: facets[i], re: re };
+    }
+    return null;
+  }
+
   function formatFigureTitle(filename) {
     var name = (filename || "").replace(/\.(png|jpe?g|svg|pdf)$/i, "");
     name = name.replace(/^\d+[_-]/, "");   // strip a leading "01_"
@@ -763,7 +778,16 @@
       if (ACRONYMS[key]) return ACRONYMS[key];
       return w.charAt(0).toUpperCase() + w.slice(1);
     });
-    return name.replace(/\bZscore\b/i, "Z-Score");
+    name = name.replace(/\bZscore\b/i, "Z-Score");
+    // Lead with the distinguishing facet (band / aperiodic measure) when present,
+    // dropping the redundant "Effect Size" prefix every analysis figure carries.
+    var hit = _figureFacet(name);
+    if (hit) {
+      var rest = name.replace(hit.re, " ").replace(/\s+/g, " ")
+        .replace(/^Effect Size\s*/i, "").trim();
+      return rest ? hit.facet + " — " + rest : hit.facet;
+    }
+    return name;
   }
 
   // One figure per full-width row with a title — for reading diagnostics inline

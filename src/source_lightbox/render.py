@@ -34,7 +34,9 @@ from .scanner import FigureEntry, _slugify  # noqa: E402
 BAND_ORDER = ["Delta", "Theta", "Alpha", "Beta", "Low Gamma", "High Gamma"]
 
 # Columns scanned, in precedence order, to decide significance of a row.
-_SIG_PVAL_COLS = ("q_value", "group_q", "p_corrected", "p_value", "p")
+# Corrected columns (q/FDR) precede raw p so a row is judged on the strictest
+# available threshold.
+_SIG_PVAL_COLS = ("q_value", "group_q", "p_corrected", "p_fdr", "p_value", "p")
 
 # Per-unit raw tables (one row per vertex) must not be force-fit into a
 # contrast x band heatmap — their summaries live in dedicated *_summary tables.
@@ -47,6 +49,11 @@ _FACET_PREF = ("relative", "coherence", "exponent", "te", "absolute")
 
 # Preferred contrast for a single-contrast overview (e.g. per-ROI maps).
 _CONTRAST_PREF = ("disease", "rescue")
+
+# Preferred connectivity metric to feature when a table spans several of them
+# (the nodal graph-metric table carries all five); imag_coherence is the study's
+# primary metric, matched before the substring-y "coherence".
+_CONN_METRIC_PREF = ("imag_coherence", "coherence", "dwpli", "pli", "aec")
 
 
 # --------------------------------------------------------------------------- #
@@ -300,6 +307,60 @@ class RoiBandHeatmap(_Renderer):
         return out
 
 
+class RoiGraphMetricHeatmap(_Renderer):
+    """Nodal graph-metric group differences: one ROI x band heatmap of the Welch
+    t-statistic per graph metric (degree / clustering / betweenness), at the
+    primary connectivity metric and contrast. ★ marks FDR-significant ROIs.
+
+    This is the *nodal* companion to the NBS subnetwork view: both summarize the
+    same connectivity matrices, so it renders alongside the NBS overview in the
+    Connectivity -> Network section rather than replacing it. The table spans all
+    contrasts x 5 connectivity metrics x 3 graph metrics; the overview collapses
+    to one connectivity metric and (in overview mode) one contrast, leaving the
+    full grid to the sortable CSV.
+    """
+
+    name = "roi_graph_metric_heatmap"
+
+    @staticmethod
+    def matches(headers):
+        return _has(headers, "contrast", "roi", "band", "graph_metric", "t")
+
+    @staticmethod
+    def render(records, headers, out_dir, stem, dpi, overview=False, contrast_labels=None):
+        def sig_fn(rec):
+            f = _to_float(rec.get("p_fdr"))
+            return f is not None and f < 0.05
+
+        # Feature one connectivity metric (the table carries all five).
+        conn_vals = _unique(records, "conn_metric")
+        conn = _pick_preferred(conn_vals, _CONN_METRIC_PREF) if conn_vals else None
+        recs = [r for r in records if r.get("conn_metric") == conn] if conn else records
+
+        contrasts = _unique(recs, "contrast")
+        if overview and contrasts:
+            contrasts = [_pick_preferred(contrasts, _CONTRAST_PREF)]
+
+        out = []
+        for contrast in contrasts:
+            csub = [r for r in recs if r.get("contrast") == contrast]
+            for gm in _unique(csub, "graph_metric"):
+                subset = [r for r in csub if r.get("graph_metric") == gm]
+                mat, rows, cols, smask = _grid(
+                    subset, "roi", "band", lambda r: _to_float(r.get("t")), sig_fn=sig_fn,
+                )
+                if not rows or not cols:
+                    continue
+                cm = f" · {conn}" if conn else ""
+                title = f"{stem} — {gm} · {contrast}{cm}"
+                fname = f"{stem}__{_slugify(gm)}_{_slugify(contrast)}.png"
+                path = out_dir / fname
+                _heatmap(mat, rows, cols, smask, title, path, dpi,
+                         value_label="Welch t (A − B); ★ FDR<0.05")
+                out.append(path)
+        return out
+
+
 class MvpaHeatmap(_Renderer):
     """Per-band decoding strength as a contrast x band heatmap (centered at chance)."""
 
@@ -487,6 +548,7 @@ class EffectSizeHeatmap(_Renderer):
 # Order matters: more specific renderers first.
 REGISTRY: list[type[_Renderer]] = [
     RoiBandHeatmap,
+    RoiGraphMetricHeatmap,
     MvpaHeatmap,
     NbsComponentPlot,
     ClusterHeatmap,
@@ -680,4 +742,45 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
                     filename=path.name,
                 )
             )
+
+        # 3. Nodal graph metrics render ALONGSIDE the chosen overview: the network
+        #    module shows both the NBS subnetwork view and the nodal graph-metric
+        #    maps of the same connectivity matrices. (When the graph table is the
+        #    only renderable one it is already the chosen overview above — skip it
+        #    here so it isn't drawn twice.)
+        for tbl2 in group:
+            if chosen is not None and tbl2 is chosen[0]:
+                continue
+            try:
+                data2 = _read_csv(tbl2.src_path)
+            except Exception:  # noqa: BLE001
+                continue
+            if select_renderer(data2["headers"]) is not RoiGraphMetricHeatmap:
+                continue
+            records2 = _records(data2["headers"], data2["rows"])
+            if contrast_labels:
+                for rec in records2:
+                    if rec.get("contrast") in contrast_labels:
+                        rec["contrast"] = contrast_labels[rec["contrast"]]
+            dest.mkdir(parents=True, exist_ok=True)
+            stem2 = Path(tbl2.filename).stem
+            try:
+                paths2 = RoiGraphMetricHeatmap.render(
+                    records2, data2["headers"], dest, stem2, dpi,
+                    overview=True, contrast_labels=contrast_labels,
+                )
+            except Exception as exc:  # noqa: BLE001
+                log(f"  WARNING: render failed {tbl2.filename} [graph metrics]: {exc}")
+                continue
+            for path in paths2:
+                figures.append(
+                    FigureEntry(
+                        src_path=path,
+                        category="analytics",
+                        source_label=source,
+                        paradigm=paradigm,
+                        analysis=analysis,
+                        filename=path.name,
+                    )
+                )
     return figures

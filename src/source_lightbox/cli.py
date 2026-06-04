@@ -88,6 +88,9 @@ def main():
     help="YAML with a top-level roi_categories: mapping (for brain mosaics).",
 )
 @click.option("--verbose/--quiet", default=True, help="Verbose output.")
+@click.option("--serve", "serve_after", is_flag=True, default=False,
+              help="Serve the gallery locally after building (build + preview in one step).")
+@click.option("--port", "-p", default=5500, type=int, help="Port for --serve.")
 def build(
     config_file,
     localizations,
@@ -105,6 +108,8 @@ def build(
     brain_python,
     roi_categories,
     verbose,
+    serve_after,
+    port,
 ):
     """Build a static gallery from analysis outputs."""
     import yaml as _yaml
@@ -269,18 +274,20 @@ def build(
 
     do_build(config, verbose=verbose)
 
+    if serve_after:
+        _serve_gallery(Path(output), port)
 
-@main.command()
-@click.argument("gallery_dir", type=click.Path(exists=True, file_okay=False))
-@click.option("--port", "-p", default=5500, type=int, help="Port to serve on.")
-def serve(gallery_dir, port):
-    """Serve a built gallery locally for preview."""
-    gallery = Path(gallery_dir)
+
+def _serve_gallery(gallery: Path, port: int) -> None:
+    """Serve a built gallery directory over HTTP until interrupted."""
     if not (gallery / "index.html").exists():
         click.echo(f"Error: {gallery} does not contain index.html. Run 'build' first.", err=True)
         sys.exit(1)
 
     handler = partial(http.server.SimpleHTTPRequestHandler, directory=str(gallery))
+    # Reuse the address so re-hosting right after a previous serve doesn't hit
+    # "address already in use" while the old socket lingers in TIME_WAIT.
+    socketserver.TCPServer.allow_reuse_address = True
     click.echo(f"Serving gallery at http://localhost:{port}")
     click.echo("Press Ctrl+C to stop.")
     with socketserver.TCPServer(("", port), handler) as httpd:
@@ -288,6 +295,14 @@ def serve(gallery_dir, port):
             httpd.serve_forever()
         except KeyboardInterrupt:
             click.echo("\nStopped.")
+
+
+@main.command()
+@click.argument("gallery_dir", type=click.Path(exists=True, file_okay=False))
+@click.option("--port", "-p", default=5500, type=int, help="Port to serve on.")
+def serve(gallery_dir, port):
+    """Serve a built gallery locally for preview."""
+    _serve_gallery(Path(gallery_dir), port)
 
 
 @main.command()
