@@ -25,7 +25,8 @@ def _read_csv(path: Path) -> dict:
 def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
                    contrast_labels: dict | None = None,
                    contrast_groups: dict | None = None,
-                   analysis_meta: dict | None = None) -> dict:
+                   analysis_meta: dict | None = None,
+                   paradigm_display: dict | None = None) -> dict:
     """Build the manifest dictionary from aggregated scan results.
 
     Tables are embedded as parsed CSV data and summaries as rendered HTML,
@@ -39,6 +40,8 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
     manifest = {
         "title": title,
         "paradigms": {},
+        # Per-paradigm nav display: paradigm key -> {group, label}. Empty = flat nav.
+        "paradigm_meta": paradigm_display or {},
         "localization": {},
         "sources": [],
     }

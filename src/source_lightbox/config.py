@@ -44,6 +44,10 @@ class BuildConfig:
     circos_render: bool = True
     contrast_pairs: list | None = None    # [{name, group_a, group_b}] for circos
     circos_metrics: list | None = None    # connectivity metrics to render (None = imag_coherence)
+    # Per-paradigm nav display: paradigm key -> {group, label}. Lets a study nest
+    # its paradigms under a shared group header (e.g. resting/vertex -> "Resting"
+    # with "ROI-based"/"Vertex-based" sub-labels). None = flat, formatName labels.
+    paradigm_display: dict | None = None
 
     def __post_init__(self):
         self.output_dir = Path(self.output_dir)

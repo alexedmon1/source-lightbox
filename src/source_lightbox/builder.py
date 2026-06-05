@@ -144,6 +144,7 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
         contrast_labels=config.contrast_labels,
         contrast_groups=config.contrast_groups,
         analysis_meta=analysis_meta,
+        paradigm_display=config.paradigm_display,
     )
     manifest_json = json.dumps(manifest, indent=2)
     data_dir = out / "data"

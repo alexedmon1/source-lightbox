@@ -149,6 +149,14 @@
       "/" + encodeURIComponent(domain);
   }
 
+  /* ── Paradigm display metadata (optional, from M.paradigm_meta) ──
+     Lets a study nest its paradigms under a shared group header and relabel them
+     (e.g. resting/vertex → group "Resting" with "ROI-based"/"Vertex-based"). When
+     a paradigm has no entry, the nav stays flat and labels fall back to formatName. */
+  function paradigmMeta(p) { return (M.paradigm_meta && M.paradigm_meta[p]) || null; }
+  function paradigmGroup(p) { var m = paradigmMeta(p); return (m && m.group) || null; }
+  function paradigmLabel(p) { var m = paradigmMeta(p); return (m && m.label) || formatName(p); }
+
   /* ── Sidebar ── */
   function buildSidebar() {
     var nav = document.getElementById("sidebar-nav");
@@ -184,7 +192,10 @@
         if (aSources.length > 1) {
           html += '<div class="nav-paradigm">' + escapeHtml(src) + '</div>';
         }
-        // Group paradigms that have data for this source
+        // Group paradigms that have data for this source. A paradigm may declare
+        // a display group (M.paradigm_meta) so siblings nest under one header
+        // (e.g. "Resting" › "ROI-based"/"Vertex-based"); otherwise the nav is flat.
+        var lastGroup = null;
         for (var paradigm of Object.keys(M.paradigms)) {
           var analyses = M.paradigms[paradigm];
           var hasData = false;
@@ -198,7 +209,13 @@
           }
           if (!hasData) continue;
 
-          html += '<div class="nav-study-design">' + formatName(paradigm) + '</div>';
+          var grp = paradigmGroup(paradigm);
+          if (grp && grp !== lastGroup) {
+            html += '<div class="nav-paradigm-group">' + escapeHtml(grp) + '</div>';
+          }
+          lastGroup = grp;  // null for ungrouped → next grouped paradigm re-emits
+
+          html += '<div class="nav-study-design">' + paradigmLabel(paradigm) + '</div>';
           // Group analyses by domain (one nav item per domain → domain page).
           domainsForParadigm(paradigm, src).forEach(function (domain) {
             html += navItem(domainRoute(src, paradigm, domain), domain);
@@ -245,7 +262,7 @@
       for (var paradigm of Object.keys(M.paradigms)) {
         var domains = domainsForParadigm(paradigm, src);
         if (domains.length === 0) continue;
-        html += '<h3 style="margin:12px 0 6px">' + formatName(paradigm) + '</h3>';
+        html += '<h3 style="margin:12px 0 6px">' + paradigmLabel(paradigm) + '</h3>';
         html += "<ul>" + domainListItems(paradigm, domains, src) + "</ul>";
       }
     }
@@ -285,7 +302,7 @@
     for (var paradigm of Object.keys(M.paradigms)) {
       var domains = domainsForParadigm(paradigm, src);
       if (domains.length === 0) continue;
-      html += '<h3 style="margin:12px 0 6px">' + formatName(paradigm) + '</h3>';
+      html += '<h3 style="margin:12px 0 6px">' + paradigmLabel(paradigm) + '</h3>';
       html += "<ul>" + domainListItems(paradigm, domains, src) + "</ul>";
     }
     setContent(html);
@@ -298,11 +315,11 @@
       setContent('<div class="empty-state"><p>Study design not found</p></div>');
       return;
     }
-    setBreadcrumb(analyticsCrumbs(src, [formatName(paradigm)]));
+    setBreadcrumb(analyticsCrumbs(src, [paradigmLabel(paradigm)]));
     clearSourceSelector();
 
     var domains = domainsForParadigm(paradigm, src);
-    var html = '<h2 class="section-header">' + formatName(paradigm) + '</h2>';
+    var html = '<h2 class="section-header">' + paradigmLabel(paradigm) + '</h2>';
     html += "<ul>" + domainListItems(paradigm, domains, src) + "</ul>";
     setContent(html);
   }
@@ -315,7 +332,7 @@
       return;
     }
 
-    setBreadcrumb(analyticsCrumbs(src, [formatName(paradigm), formatName(analysis)]));
+    setBreadcrumb(analyticsCrumbs(src, [paradigmLabel(paradigm), formatName(analysis)]));
 
     // Source selector (if multiple sources have this analysis)
     var sources = M.sources.filter(function (s) {
@@ -336,7 +353,7 @@
 
   function renderAnalysisContent(paradigm, analysis, data, source, allSources) {
     var inner = buildAnalysisInner(paradigm, analysis, data, source, allSources, "a");
-    var html = '<h2 class="section-header">' + formatName(paradigm) + ' — ' + formatName(analysis) + '</h2>' + inner.html;
+    var html = '<h2 class="section-header">' + paradigmLabel(paradigm) + ' — ' + formatName(analysis) + '</h2>' + inner.html;
     setContent(html);
     initLightbox();
     bindTableToggles(inner.tables);
@@ -419,11 +436,11 @@
       setContent('<div class="empty-state"><p>Nothing in this domain.</p></div>');
       return;
     }
-    setBreadcrumb(analyticsCrumbs(src, [formatName(paradigm), domain]));
+    setBreadcrumb(analyticsCrumbs(src, [paradigmLabel(paradigm), domain]));
     clearSourceSelector();
 
     var html = '<h2 class="section-header">' + escapeHtml(domain) +
-      ' <span class="domain-sub">' + formatName(paradigm) + '</span></h2>';
+      ' <span class="domain-sub">' + paradigmLabel(paradigm) + '</span></h2>';
     if (ordered.length > 1) {
       html += '<div class="pill-bar" role="tablist">';
       ordered.forEach(function (o, i) {

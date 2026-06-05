@@ -126,6 +126,8 @@ def build(
     contrast_pairs = None
     # Connectivity metrics to render as circos (from --config).
     circos_metrics = None
+    # Per-paradigm nav display mapping (from --config): paradigm -> {group, label}.
+    paradigm_display = None
 
     # If --config provided, read paths from unified study.yaml
     if config_file is not None:
@@ -198,6 +200,13 @@ def build(
         if circos_metrics is None:
             cm = study_cfg.get("circos_metrics")
             circos_metrics = list(cm) if cm else None
+        # Per-paradigm nav display, co-located under each paradigm's `display:` key.
+        if paradigm_display is None:
+            paradigm_display = {
+                name: p["display"]
+                for name, p in (study_cfg.get("paradigms") or {}).items()
+                if isinstance(p, dict) and p.get("display")
+            } or None
         # ROI categories YAML: explicit path, else conventional file beside config.
         if roi_categories is None:
             cfg_cats = paths.get("roi_categories")
@@ -268,6 +277,7 @@ def build(
         contrast_groups=contrast_groups,
         contrast_pairs=contrast_pairs,
         circos_metrics=circos_metrics,
+        paradigm_display=paradigm_display,
     )
 
     from .builder import build as do_build

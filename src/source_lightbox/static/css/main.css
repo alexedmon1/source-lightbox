@@ -146,6 +146,16 @@ body {
   cursor: default;
 }
 
+/* Top-level grouping of paradigms that share a display group (e.g. "Resting"
+   over "ROI-based"/"Vertex-based"). Sits above .nav-study-design sub-labels. */
+.nav-paradigm-group {
+  padding: 10px 16px 2px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  cursor: default;
+}
+
 .nav-study-design {
   padding: 6px 16px 2px 22px;
   font-size: 12px;
