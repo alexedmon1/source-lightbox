@@ -87,6 +87,9 @@ def main():
     type=click.Path(dir_okay=False),
     help="YAML with a top-level roi_categories: mapping (for brain mosaics).",
 )
+@click.option("--exclude-analysis", "exclude_analyses", multiple=True,
+              help="Analysis name to omit from the gallery (repeatable). Overrides "
+                   "the study config's exclude_analyses / the built-in default.")
 @click.option("--verbose/--quiet", default=True, help="Verbose output.")
 @click.option("--serve", "serve_after", is_flag=True, default=False,
               help="Serve the gallery locally after building (build + preview in one step).")
@@ -107,6 +110,7 @@ def build(
     brain_render,
     brain_python,
     roi_categories,
+    exclude_analyses,
     verbose,
     serve_after,
     port,
@@ -128,6 +132,8 @@ def build(
     circos_metrics = None
     # Per-paradigm nav display mapping (from --config): paradigm -> {group, label}.
     paradigm_display = None
+    # Analyses to omit from the gallery (from --config); CLI flag takes precedence.
+    cfg_exclude = None
 
     # If --config provided, read paths from unified study.yaml
     if config_file is not None:
@@ -207,6 +213,7 @@ def build(
                 for name, p in (study_cfg.get("paradigms") or {}).items()
                 if isinstance(p, dict) and p.get("display")
             } or None
+        cfg_exclude = study_cfg.get("exclude_analyses")
         # ROI categories YAML: explicit path, else conventional file beside config.
         if roi_categories is None:
             cfg_cats = paths.get("roi_categories")
@@ -278,6 +285,10 @@ def build(
         contrast_pairs=contrast_pairs,
         circos_metrics=circos_metrics,
         paradigm_display=paradigm_display,
+        # CLI flag > study-config `exclude_analyses:` > BuildConfig built-in default.
+        **({"exclude_analyses": list(exclude_analyses)} if exclude_analyses
+           else {"exclude_analyses": list(cfg_exclude)} if cfg_exclude is not None
+           else {}),
     )
 
     from .builder import build as do_build

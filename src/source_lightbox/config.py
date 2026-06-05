@@ -48,6 +48,10 @@ class BuildConfig:
     # its paradigms under a shared group header (e.g. resting/vertex -> "Resting"
     # with "ROI-based"/"Vertex-based" sub-labels). None = flat, formatName labels.
     paradigm_display: dict | None = None
+    # Analyses to omit from the gallery entirely (figures, tables, summaries, nav).
+    # Defaults to the combined network aliases, now superseded by the split
+    # graph + nbs modules; a study can override via `exclude_analyses:` in its yaml.
+    exclude_analyses: list[str] = field(default_factory=lambda: ["roi_network", "vertex_network"])
 
     def __post_init__(self):
         self.output_dir = Path(self.output_dir)

@@ -50,6 +50,22 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
         partial = scanner.scan()
         _merge_scan(scan, partial)
 
+    # Drop excluded analyses (e.g. the combined network aliases, superseded by the
+    # split graph+nbs modules) from every scan list — figures, tables, AND
+    # summaries — so they vanish from the manifest, nav, and rendered figures. Also
+    # match on paradigm to clear a stray top-level alias paradigm dir.
+    excl = set(config.exclude_analyses or [])
+    if excl:
+        def _keep(e):
+            return e.analysis not in excl and getattr(e, "paradigm", None) not in excl
+        n0 = len(scan.figures) + len(scan.tables) + len(scan.summaries)
+        scan.figures = [e for e in scan.figures if _keep(e)]
+        scan.tables = [e for e in scan.tables if _keep(e)]
+        scan.summaries = [e for e in scan.summaries if _keep(e)]
+        n_drop = n0 - (len(scan.figures) + len(scan.tables) + len(scan.summaries))
+        if n_drop:
+            _log(f"  Excluded {n_drop} entries from {sorted(excl)}")
+
     _log(
         f"  Found: {len(scan.figures)} figures, {len(scan.tables)} tables, "
         f"{len(scan.summaries)} summaries"
