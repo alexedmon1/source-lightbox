@@ -102,6 +102,10 @@
      page per (paradigm × domain); a secondary nests right after its primary as a
      sub-tab. Domain order is fixed; unknown domains fall to the end. */
   var DOMAIN_ORDER = ["Spectral", "Connectivity", "Cross-frequency", "Sensor-level", "Evoked", "Other"];
+  // "Sensor-level" is a distinct acquisition level (scalp electrodes, not source-
+  // localized ROI/vertex data), so in the nav it is promoted out of its paradigm's
+  // domain list into its own study-design heading rather than listed under ROI/vertex.
+  var SENSOR_DOMAIN = "Sensor-level";
 
   function analysisHasData(ad, src) {
     return (ad.figures[src] && ad.figures[src].length > 0) ||
@@ -196,6 +200,10 @@
         // a display group (M.paradigm_meta) so siblings nest under one header
         // (e.g. "Resting" › "ROI-based"/"Vertex-based"); otherwise the nav is flat.
         var lastGroup = null;
+        // Sensor-level sections are deferred to the END of their group so they sit
+        // after the source-localized study designs (ROI → Vertex → Sensor-level).
+        var pendingSensor = "";
+        function flushSensor() { html += pendingSensor; pendingSensor = ""; }
         for (var paradigm of Object.keys(M.paradigms)) {
           var analyses = M.paradigms[paradigm];
           var hasData = false;
@@ -210,17 +218,32 @@
           if (!hasData) continue;
 
           var grp = paradigmGroup(paradigm);
-          if (grp && grp !== lastGroup) {
-            html += '<div class="nav-paradigm-group">' + escapeHtml(grp) + '</div>';
+          if (grp !== lastGroup) {
+            flushSensor();  // close out the previous group's sensor section first
+            if (grp) html += '<div class="nav-paradigm-group">' + escapeHtml(grp) + '</div>';
           }
           lastGroup = grp;  // null for ungrouped → next grouped paradigm re-emits
 
           html += '<div class="nav-study-design">' + paradigmLabel(paradigm) + '</div>';
           // Group analyses by domain (one nav item per domain → domain page).
-          domainsForParadigm(paradigm, src).forEach(function (domain) {
+          // Sensor-level is promoted to its own study-design heading (deferred to the
+          // group end), so it is not listed as a domain under this paradigm's label.
+          var pdomains = domainsForParadigm(paradigm, src);
+          pdomains.forEach(function (domain) {
+            if (domain === SENSOR_DOMAIN) return;
             html += navItem(domainRoute(src, paradigm, domain), domain);
           });
+          // Accumulate Sensor-level into the pending section for this group.
+          if (pdomains.indexOf(SENSOR_DOMAIN) >= 0) {
+            pendingSensor += '<div class="nav-study-design">' + escapeHtml(SENSOR_DOMAIN) + '</div>';
+            domainAnalyses(paradigm, SENSOR_DOMAIN, src).forEach(function (o) {
+              pendingSensor += navItem("/analytics/" + encodeURIComponent(src) + "/" +
+                encodeURIComponent(paradigm) + "/" + encodeURIComponent(o.name),
+                formatName(o.name));
+            });
+          }
         }
+        flushSensor();  // emit the final group's sensor section
       }
     }
 
