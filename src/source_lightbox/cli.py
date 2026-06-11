@@ -126,6 +126,8 @@ def build(
     # Contrast name -> readable label / tier group (read from --config).
     contrast_labels = None
     contrast_groups = None
+    # Contrast name -> {role, test, gate_on} hypothesis metadata (read from --config).
+    contrast_meta = None
     # Contrast name + groups (for connectivity circos).
     contrast_pairs = None
     # Connectivity metrics to render as circos (from --config).
@@ -198,6 +200,18 @@ def build(
             contrast_labels = {c["name"]: c["label"] for c in study_contrasts if c.get("label")} or None
         if contrast_groups is None:
             contrast_groups = {c["name"]: c["group"] for c in study_contrasts if c.get("group")} or None
+        if contrast_meta is None:
+            contrast_meta = {
+                c["name"]: {
+                    "role": c.get("role", "exploratory"),
+                    "test": c.get("test", "difference"),
+                    "gate_on": ([c["gate_on"]] if isinstance(c.get("gate_on"), str)
+                                else list(c.get("gate_on") or [])),
+                }
+                for c in study_contrasts
+                # Only emit for contrasts that declare hypothesis-testing intent.
+                if c.get("role") or c.get("test") or c.get("gate_on")
+            } or None
         if contrast_pairs is None:
             contrast_pairs = [
                 {"name": c["name"], "group_a": c["group_a"], "group_b": c["group_b"]}
@@ -282,6 +296,7 @@ def build(
         contrasts=contrasts,
         contrast_labels=contrast_labels,
         contrast_groups=contrast_groups,
+        contrast_meta=contrast_meta,
         contrast_pairs=contrast_pairs,
         circos_metrics=circos_metrics,
         paradigm_display=paradigm_display,

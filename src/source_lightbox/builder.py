@@ -159,6 +159,7 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
         scan, config.title, max_table_rows=config.max_table_rows,
         contrast_labels=config.contrast_labels,
         contrast_groups=config.contrast_groups,
+        contrast_meta=config.contrast_meta,
         analysis_meta=analysis_meta,
         paradigm_display=config.paradigm_display,
     )

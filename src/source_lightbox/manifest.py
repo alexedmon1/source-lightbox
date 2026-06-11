@@ -25,6 +25,7 @@ def _read_csv(path: Path) -> dict:
 def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
                    contrast_labels: dict | None = None,
                    contrast_groups: dict | None = None,
+                   contrast_meta: dict | None = None,
                    analysis_meta: dict | None = None,
                    paradigm_display: dict | None = None) -> dict:
     """Build the manifest dictionary from aggregated scan results.
@@ -35,6 +36,11 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
     ``analysis_meta`` (read from source-analytics) attaches a ``meta`` block —
     ``domain`` and ``supplements`` — to each analysis so the gallery can group
     by domain and nest each secondary under the primary it supplements.
+
+    ``contrast_meta`` (read from the study YAML) carries each contrast's
+    hypothesis-testing metadata — ``role``, ``test``, ``gate_on`` — keyed by
+    contrast name. Phase 0 only passes it through to the manifest; the
+    rescue-map presentation (Phase 2) consumes it.
     """
     analysis_meta = analysis_meta or {}
     manifest = {
@@ -42,6 +48,8 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
         "paradigms": {},
         # Per-paradigm nav display: paradigm key -> {group, label}. Empty = flat nav.
         "paradigm_meta": paradigm_display or {},
+        # Per-contrast hypothesis metadata: name -> {role, test, gate_on}.
+        "contrast_meta": contrast_meta or {},
         "localization": {},
         "sources": [],
     }
