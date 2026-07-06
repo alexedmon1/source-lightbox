@@ -24,6 +24,7 @@ from .render import (
     _records,
     _table_priority,
     _to_float,
+    _to_native,
     _unique,
 )
 
@@ -33,6 +34,7 @@ from .render import (
 # hedges_g stays first so modules that already produce a g-digest are unchanged.
 _EFFECT_COLS = (
     ("hedges_g", lambda v: f"g={abs(v):.2f}", True),
+    ("effect_size", lambda v: f"g={abs(v):.2f}", True),  # native alias of hedges_g
     ("coefficient", lambda v: f"&beta;={v:+.2f}", True),
     ("auc", lambda v: f"AUC={v:.2f}", False),
     ("accuracy", lambda v: f"acc={v:.2f}", False),
@@ -49,7 +51,7 @@ def _effect_column(headers: list[str]):
 
 def _element_column(headers: list[str]) -> str | None:
     """Per-element axis (``roi``/``vertex_idx``) that must be aggregated away."""
-    for col in ("roi", "vertex_idx"):
+    for col in ("roi", "spatial", "vertex_idx"):
         if col in headers:
             return col
     return None
@@ -60,7 +62,7 @@ def _summary_table(tables: list[dict]) -> dict | None:
     ``contrast`` column, a category axis, and any recognized effect column."""
     candidates = [
         t for t in tables
-        if "contrast" in t["headers"]
+        if ("contrast" in t["headers"] or "hypothesis" in t["headers"])
         and _category_column(t["headers"], _records(t["headers"], t["rows"])) is not None
         and _effect_column(t["headers"]) is not None
     ]
@@ -137,7 +139,7 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
         return None
 
     headers = table["headers"]
-    records = _records(headers, table["rows"])
+    records = _to_native(_records(headers, table["rows"]))
     cat = _category_column(headers, records)
     effect_col, effect_fmt, signed = _effect_column(headers)
     elem_col = _element_column(headers)
@@ -147,11 +149,11 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
     if elem_col:  # per-element tables aggregate over the facet too
         facet_col = None
 
-    all_contrasts = _unique(records, "contrast")
+    all_contrasts = _unique(records, "hypothesis")
     sig_by_contrast: dict[str, list[dict]] = {}
     for rec in records:
         if _is_sig(rec) and _to_float(rec.get(effect_col)) is not None:
-            sig_by_contrast.setdefault(rec.get("contrast"), []).append(rec)
+            sig_by_contrast.setdefault(rec.get("hypothesis"), []).append(rec)
 
     if not sig_by_contrast:
         return (
@@ -170,10 +172,10 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
     rp_counts: dict[tuple, int] = {}
     has_region_pairs = rp_source is not None and elem_col is None
     if has_region_pairs:
-        for r in _records(rp_source["headers"], rp_source["rows"]):
+        for r in _to_native(_records(rp_source["headers"], rp_source["rows"])):
             p = _to_float(r.get("p_value"))
             if p is not None and p < 0.05:
-                key = (r.get("contrast"), r.get("band"), r.get("metric"))
+                key = (r.get("hypothesis"), r.get("band"), r.get("metric"))
                 rp_counts[key] = rp_counts.get(key, 0) + 1
 
     # Build one list item per significant contrast (keyed for later grouping).
@@ -242,7 +244,7 @@ def _per_record_chips(rows, cat, effect_col, effect_fmt, signed, facet_col, rp_c
             facet = ' <span class="sig-facet">' + escape(str(rec[facet_col])) + "</span>"
         pairs = ""
         if rp_counts is not None:  # connectivity: annotate with gated region-pair detail
-            k = (rec.get("contrast"), rec.get(cat), rec.get(facet_col) if facet_col else None)
+            k = (rec.get("hypothesis"), rec.get(cat), rec.get(facet_col) if facet_col else None)
             cnt = rp_counts.get(k, 0)
             pairs = (' <span class="sig-pairs">' + f"{cnt} region pair{'s' if cnt != 1 else ''}" + "</span>"
                      if cnt else ' <span class="sig-pairs diffuse">diffuse</span>')

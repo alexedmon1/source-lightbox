@@ -81,6 +81,31 @@ def _any(headers: list[str], *cols: str) -> bool:
     return any(c in headers for c in cols)
 
 
+# Legacy hypothesis-CSV alias -> native column. Emitted by source-analytics'
+# ``.add_legacy_aliases`` (R) / ``tabular.py`` (Python) during the schema
+# migration; ``_to_native`` lets renderers read the native schema whether or not
+# the source table still carries the aliases. Drop this once the aliases are gone.
+_ALIAS_TO_NATIVE = {
+    "contrast": "hypothesis",
+    "roi": "spatial",
+    "power_type": "dv",
+    "t_ratio": "stat",
+    "t": "stat",
+    "hedges_g": "effect_size",
+    "p_fdr": "q_value",
+}
+
+
+def _to_native(records: list[dict]) -> list[dict]:
+    """Fill missing native columns from legacy aliases (dual-read). Mutates and
+    returns ``records`` so downstream reads can use the native schema."""
+    for rec in records:
+        for alias, native in _ALIAS_TO_NATIVE.items():
+            if rec.get(native) in (None, "") and rec.get(alias) not in (None, ""):
+                rec[native] = rec[alias]
+    return records
+
+
 def _is_sig(rec: dict) -> bool:
     """Significance of a row: explicit flag, else first p/q column < 0.05."""
     flag = rec.get("significant")
@@ -245,13 +270,14 @@ def _facet_heatmaps(records, headers, out_dir, stem, dpi, value_fn, *,
     With ``single=True`` (overview mode) only the preferred facet value is drawn,
     giving exactly one figure.
     """
+    records = _to_native(records)
     fcol, fvals = _facet_column(headers, records)
     if single and fcol:
         fvals = [_pick_preferred(fvals, _FACET_PREF)]
     out = []
     for fval in fvals:
         subset = records if fcol is None else [r for r in records if r.get(fcol) == fval]
-        mat, rows, cols, smask = _grid(subset, "contrast", col_key, value_fn, sig_fn, agg)
+        mat, rows, cols, smask = _grid(subset, "hypothesis", col_key, value_fn, sig_fn, agg)
         if not rows or not cols:
             continue
         title = stem + (f" — {fval}" if fval else "")
@@ -286,18 +312,22 @@ class RoiBandHeatmap(_Renderer):
 
     @staticmethod
     def matches(headers):
-        return _has(headers, "contrast", "roi", "band", "hedges_g")
+        return (_any(headers, "hypothesis", "contrast")
+                and _any(headers, "spatial", "roi")
+                and "band" in headers
+                and _any(headers, "effect_size", "hedges_g"))
 
     @staticmethod
     def render(records, headers, out_dir, stem, dpi, overview=False, contrast_labels=None):
-        contrasts = _unique(records, "contrast")
+        records = _to_native(records)
+        contrasts = _unique(records, "hypothesis")
         if overview and contrasts:
             contrasts = [_pick_preferred(contrasts, _CONTRAST_PREF)]
         out = []
         for contrast in contrasts:
-            subset = [r for r in records if r.get("contrast") == contrast]
+            subset = [r for r in records if r.get("hypothesis") == contrast]
             mat, rows, cols, smask = _grid(
-                subset, "roi", "band", lambda r: _to_float(r.get("hedges_g"))
+                subset, "spatial", "band", lambda r: _to_float(r.get("effect_size"))
             )
             if not rows or not cols:
                 continue
@@ -530,17 +560,18 @@ class EffectSizeHeatmap(_Renderer):
         if _any(headers, *_PER_VERTEX_COLS):
             return False
         return (
-            "hedges_g" in headers
-            and "contrast" in headers
+            _any(headers, "effect_size", "hedges_g")
+            and _any(headers, "hypothesis", "contrast")
             and _any(headers, "band", "freq_pair")
         )
 
     @staticmethod
     def render(records, headers, out_dir, stem, dpi, overview=False, contrast_labels=None):
+        records = _to_native(records)
         col_key = "band" if "band" in headers else "freq_pair"
         return _facet_heatmaps(
             records, headers, out_dir, stem, dpi,
-            value_fn=lambda r: _to_float(r.get("hedges_g")),
+            value_fn=lambda r: _to_float(r.get("effect_size")),
             col_key=col_key, suffix="effect_size", single=overview,
         )
 
@@ -717,8 +748,9 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
         records = _records(data["headers"], data["rows"])
         if contrast_labels:
             for rec in records:
-                if rec.get("contrast") in contrast_labels:
-                    rec["contrast"] = contrast_labels[rec["contrast"]]
+                for key in ("contrast", "hypothesis"):  # relabel both during dual-read
+                    if rec.get(key) in contrast_labels:
+                        rec[key] = contrast_labels[rec[key]]
         dest.mkdir(parents=True, exist_ok=True)
         stem = Path(tbl.filename).stem
         # NBS is the network module's primary figure and lives on its own
@@ -760,8 +792,9 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
             records2 = _records(data2["headers"], data2["rows"])
             if contrast_labels:
                 for rec in records2:
-                    if rec.get("contrast") in contrast_labels:
-                        rec["contrast"] = contrast_labels[rec["contrast"]]
+                    for key in ("contrast", "hypothesis"):  # relabel both during dual-read
+                        if rec.get(key) in contrast_labels:
+                            rec[key] = contrast_labels[rec[key]]
             dest.mkdir(parents=True, exist_ok=True)
             stem2 = Path(tbl2.filename).stem
             try:
