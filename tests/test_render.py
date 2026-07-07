@@ -147,6 +147,44 @@ def test_roi_overview_single_contrast(tmp_path):
     assert len(over) == 1 and "disease" in over[0].name  # prefers disease_effect
 
 
+# --------------------------------------------------------------------------- #
+# Native hypothesis schema (post alias-drop) — migration regression guard.
+# After source-analytics dropped the legacy aliases, <module>_hypotheses.csv and
+# the hyp-derived posthoc tables carry ONLY native columns (hypothesis/spatial/
+# dv/stat/effect_size/q_value). These lock in that the renderers that consume
+# those tables still dispatch and render from the native schema alone.
+# --------------------------------------------------------------------------- #
+def test_native_schema_dispatch():
+    # No alias columns present at all.
+    assert select_renderer("hypothesis,spatial,band,effect_size,significant".split(",")) is RoiBandHeatmap
+    assert select_renderer("hypothesis,dv,band,effect_size,significant".split(",")) is EffectSizeHeatmap
+
+
+def test_native_roi_band_heatmap_renders(tmp_path):
+    headers = "hypothesis,spatial,band,dv,effect_size,significant".split(",")
+    records = [
+        {"hypothesis": "disease_effect", "spatial": "Auditory_L", "band": "Delta", "dv": "relative", "effect_size": "0.4", "significant": "FALSE"},
+        {"hypothesis": "disease_effect", "spatial": "Motor_R", "band": "Alpha", "dv": "relative", "effect_size": "0.7", "significant": "TRUE"},
+        {"hypothesis": "hd_icv_rescue", "spatial": "Auditory_L", "band": "Delta", "dv": "relative", "effect_size": "-0.1", "significant": "FALSE"},
+    ]
+    assert select_renderer(headers) is RoiBandHeatmap
+    full = RoiBandHeatmap.render(records, headers, tmp_path, "roi_psd_posthoc_roi", dpi=72, overview=False)
+    assert len(full) == 2  # one figure per hypothesis, keyed off native `hypothesis`
+    over = RoiBandHeatmap.render(records, headers, tmp_path, "roi_psd_posthoc_roi", dpi=72, overview=True)
+    assert len(over) == 1 and over[0].exists() and "disease" in over[0].name
+
+
+def test_native_effect_size_heatmap_renders(tmp_path):
+    headers = "hypothesis,dv,band,effect_size,significant".split(",")
+    records = [
+        {"hypothesis": "disease_effect", "dv": "relative", "band": "Delta", "effect_size": "0.6", "significant": "TRUE"},
+        {"hypothesis": "disease_effect", "dv": "relative", "band": "Alpha", "effect_size": "-0.2", "significant": "FALSE"},
+    ]
+    assert select_renderer(headers) is EffectSizeHeatmap
+    out = EffectSizeHeatmap.render(records, headers, tmp_path, "roi_graph_hypotheses", dpi=72, overview=True)
+    assert len(out) == 1 and out[0].exists()
+
+
 def test_mvpa_overview(tmp_path):
     headers = "contrast,band,accuracy,auc,p_value,ci_lower,ci_upper".split(",")
     records = [
