@@ -912,6 +912,14 @@ main {
   font-style: italic;
 }
 
+/* Anatomical coverage of a significant cluster (ROI x%, … (+N ROIs ≤5%)). */
+.sig-region {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
 .sig-none {
   margin: 14px 0 0;
   font-size: 12px;

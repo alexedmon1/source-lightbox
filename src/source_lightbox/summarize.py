@@ -402,9 +402,12 @@ def _build_cluster_summary(table: dict, p_col: str, dir_col: str,
                       f'{"vertex" if n_vtx == 1 else "vertices"}</span>') if n_vtx is not None else ""
             p = _to_float(rec.get(p_col))
             pstr = f" <span class=\"g\">p={p:.3f}</span>" if p is not None else ""
+            region = rec.get("region")
+            region_html = (f' <span class="sig-region">{escape(str(region))}</span>'
+                           if region not in (None, "") else "")
             chips.append(
                 f'<span class="sig-item">{arrow}{escape(_cluster_measure_label(rec))} '
-                f'{extent}{pstr}</span>'
+                f'{extent}{pstr}{region_html}</span>'
             )
             n_findings += 1
         item_by_contrast[contrast] = (

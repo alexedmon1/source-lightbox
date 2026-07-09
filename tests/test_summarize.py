@@ -196,12 +196,12 @@ def test_vertex_cluster_digest_reads_corrected_clusters():
     # difference clusters the figures draw.
     clusters = _tbl(
         "cluster_results.csv",
-        "contrast,band,metric,cluster_id,n_vertices,cluster_stat,peak_t,p_corrected",
+        "contrast,band,metric,cluster_id,n_vertices,cluster_stat,peak_t,p_corrected,region",
         [
-            "disease_effect,Low Gamma,absolute,1,80,392.1,6.0,0.002",
-            "disease_effect,Delta,relative,1,4,8.7,2.3,0.281",          # ns
-            "hd_icv_normalization,Theta,relative,1,59,-184.8,-5.0,0.005",  # sig, normalization
-            "hd_icv_normalization,Alpha,relative,1,12,-26.8,-2.8,0.135",   # ns
+            "disease_effect,Low Gamma,absolute,1,80,392.1,6.0,0.002,Motor_R 9% (+12 ROIs <=5%)",
+            "disease_effect,Delta,relative,1,4,8.7,2.3,0.281,",          # ns
+            "hd_icv_normalization,Theta,relative,1,59,-184.8,-5.0,0.005,Cerebellum_R 12%",  # sig
+            "hd_icv_normalization,Alpha,relative,1,12,-26.8,-2.8,0.135,",   # ns
         ],
     )
     # A per-vertex stats table is present too; the digest must NOT prefer it.
@@ -223,3 +223,6 @@ def test_vertex_cluster_digest_reads_corrected_clusters():
     assert "arrow up" in html and "arrow down" in html
     # non-significant clusters excluded
     assert "12 vertices" not in html
+    # anatomical coverage surfaced when the region column is present
+    assert "sig-region" in html
+    assert "Motor_R 9%" in html and "Cerebellum_R 12%" in html
