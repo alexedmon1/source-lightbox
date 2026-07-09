@@ -14,6 +14,39 @@ import click
 from .config import BuildConfig, SourceInput
 
 
+def normalize_study_contrasts(study_cfg: dict) -> list[dict]:
+    """Return the study's contrasts as uniform dicts, from either schema.
+
+    Legacy studies declare ``contrasts:``; migrated studies declare
+    ``hypotheses:`` (name/label/role/kind/weights). Both are normalized to the
+    shape the mosaic / circos / label plumbing expects: ``name``, ``label``,
+    ``role``, ``group`` (role doubles as the tier label), and ``group_a`` /
+    ``group_b`` derived from the +1 / -1 entries of a two-group contrast's
+    ``weights``. ``contrasts:`` takes precedence when present.
+    """
+    legacy = [c for c in (study_cfg.get("contrasts") or [])
+              if isinstance(c, dict) and c.get("name")]
+    if legacy:
+        return legacy
+    out: list[dict] = []
+    for h in (study_cfg.get("hypotheses") or []):
+        if not isinstance(h, dict) or not h.get("name"):
+            continue
+        weights = h.get("weights") or {}
+        pos = [g for g, w in weights.items() if isinstance(w, (int, float)) and w > 0]
+        neg = [g for g, w in weights.items() if isinstance(w, (int, float)) and w < 0]
+        norm = {
+            "name": h["name"],
+            "label": h.get("label"),
+            "role": h.get("role"),
+            "group": h.get("role"),
+        }
+        if len(pos) == 1 and len(neg) == 1:
+            norm["group_a"], norm["group_b"] = pos[0], neg[0]
+        out.append(norm)
+    return out
+
+
 class _PairedOption(click.Option):
     """Custom option that collects paired --flag/--label values."""
 
@@ -193,7 +226,7 @@ def build(
             output = _resolve(paths.get("gallery"), "./gallery")
 
         # Brain mosaics: study contrasts drive which mosaics get rendered.
-        study_contrasts = [c for c in (study_cfg.get("contrasts") or []) if isinstance(c, dict) and c.get("name")]
+        study_contrasts = normalize_study_contrasts(study_cfg)
         if not contrasts:
             contrasts = [c["name"] for c in study_contrasts] or None
         if contrast_labels is None:

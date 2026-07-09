@@ -50,6 +50,9 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
         "paradigm_meta": paradigm_display or {},
         # Per-contrast hypothesis metadata: name -> {role, test, gate_on}.
         "contrast_meta": contrast_meta or {},
+        # Per-contrast readable labels: name -> label. Also serves as the
+        # contrast vocabulary the frontend uses to group figures by contrast.
+        "contrast_labels": contrast_labels or {},
         "localization": {},
         "sources": [],
     }

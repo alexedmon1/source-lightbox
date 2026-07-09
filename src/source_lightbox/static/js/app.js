@@ -382,6 +382,7 @@
     bindTableToggles(inner.tables);
     bindTabs();
     bindMetricTabs();
+    bindFigureGroups();
   }
 
   // Build the Summary/Figures/Tables tab UI for ONE analysis and return
@@ -399,10 +400,14 @@
       figCount = sourcesWithFigs.reduce(function (n, s) { return n + data.figures[s].length; }, 0);
     } else if (figs.length > 0) {
       // Circos sets get a metric-tab / band-row layout of small click-to-enlarge
-      // plots; everything else gets full-width titled rows.
-      figPanel = (figs[0].filename.indexOf("circos__") === 0)
-        ? renderCircosFigures(figs)
-        : renderFigureRows(figs);
+      // plots; larger sets are split into collapsible groups by an adaptive axis;
+      // small sets get full-width titled rows.
+      if (figs[0].filename.indexOf("circos__") === 0) {
+        figPanel = renderCircosFigures(figs);
+      } else {
+        var groups = figs.length > 8 ? chooseFigureGrouping(figs, _contrastVocab()) : null;
+        figPanel = groups ? renderGroupedFigures(groups) : renderFigureRows(figs);
+      }
     }
 
     var tableSource = data.tables[source] ? source : Object.keys(data.tables)[0];
@@ -507,6 +512,7 @@
       bindTableToggles(inner.tables, cont);
       bindTabs(cont);
       bindMetricTabs(cont);
+      bindFigureGroups(cont);
     }
     fill(0);
 
@@ -838,6 +844,163 @@
 
   // One figure per full-width row with a title — for reading diagnostics inline
   // (vs the thumbnail grid). Full image shown; click opens the lightbox to zoom.
+  /* ── Adaptive figure grouping ─────────────────────────────────────────────
+     A module can emit 200+ figures; a flat wall is unreadable. We group them by
+     the single axis that best organizes THAT module, chosen adaptively from the
+     filenames so it works for any study without hardcoding:
+       kind (figure-type prefix) → contrast → connectivity/coupling metric → band.
+     Rendered as collapsible sections so the page opens as a handful of headers. */
+  var GROUP_VOCAB = {
+    // longest-first within each list so "imag_coherence" beats "coherence",
+    // "high_gamma" beats "gamma", "partial_correlation" beats "partial_corr".
+    conn_metric: ["imag_coherence", "partial_correlation", "partial_corr",
+                  "coherence", "dwpli", "wpli", "dpli", "pli", "aec"],
+    coupling_metric: ["pac", "aac", "ppc"],
+    // both "_" and " " gamma variants — filenames built from display band names
+    // ("High Gamma") use spaces, source-space maps ("high_gamma") use underscores.
+    band: ["low_gamma", "high_gamma", "low gamma", "high gamma", "peak_alpha",
+           "spectral_slope", "delta", "theta", "alpha", "beta", "gamma", "epsilon"],
+    power: ["absolute", "relative"],
+    flow: ["inflow", "outflow", "netflow"],
+    measure: ["summary", "exponent", "offset"],
+    group_name: ["ko_ld_iv_icv", "ko_hd_icv", "ko_hd_iv", "ko_veh", "wt_veh"],
+  };
+  function _escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+  function _contrastVocab() {
+    // Longest-first so "hd_icv_rescue" is matched before any shorter substring.
+    return Object.keys((M && M.contrast_labels) || {})
+      .map(function (k) { return k.toLowerCase(); })
+      .sort(function (a, b) { return b.length - a.length; });
+  }
+  // Position of `value` in `base` only when it sits on token boundaries
+  // (start/end or _ - space), so "pli" doesn't match inside "dwpli". -1 if absent.
+  function _tokenHit(base, value) {
+    var i = base.indexOf(value);
+    while (i !== -1) {
+      var b = i === 0 ? "" : base.charAt(i - 1);
+      var aPos = i + value.length;
+      var a = aPos >= base.length ? "" : base.charAt(aPos);
+      var okB = b === "" || b === "_" || b === "-" || b === " ";
+      var okA = a === "" || a === "_" || a === "-" || a === " ";
+      if (okB && okA) return i;
+      i = base.indexOf(value, i + 1);
+    }
+    return -1;
+  }
+  function _axisValue(base, values) {           // first (longest) value that hits
+    for (var i = 0; i < values.length; i++) {
+      if (_tokenHit(base, values[i]) !== -1) return values[i];
+    }
+    return null;
+  }
+  function _figBase(fig) {
+    return (fig.filename || "").replace(/\.(png|jpe?g|svg|pdf)$/i, "").toLowerCase();
+  }
+  // Figure "kind" = the descriptive words left after removing every variable
+  // token (contrast / band / metric / power / flow / group / measure), wherever
+  // they sit. "fcd" from "fcd_alpha_aec"; "peak_presence" from "alpha_peak_presence";
+  // "region_significance_heatmap" from "region_significance_heatmap_disease_effect_relative".
+  var _kindVocabCache = null, _kindVocabKey = null;
+  function _kindVocab(contrasts) {
+    var key = contrasts.join("|");
+    if (_kindVocabKey === key) return _kindVocabCache;
+    var all = contrasts
+      .concat(GROUP_VOCAB.conn_metric, GROUP_VOCAB.coupling_metric, GROUP_VOCAB.band,
+              GROUP_VOCAB.power, GROUP_VOCAB.flow, GROUP_VOCAB.measure, GROUP_VOCAB.group_name);
+    // Longest-first so "imag_coherence" is removed before "coherence" can strand "imag".
+    all = all.filter(function (v, i) { return all.indexOf(v) === i; })
+             .sort(function (a, b) { return b.length - a.length; })
+             .map(function (v) { return new RegExp("(^|[_\\-\\s])" + _escapeRe(v) + "(?=$|[_\\-\\s])", "g"); });
+    _kindVocabKey = key; _kindVocabCache = all;
+    return all;
+  }
+  function _figKind(base, contrasts) {
+    var s = base;
+    _kindVocab(contrasts).forEach(function (re) { s = s.replace(re, "$1"); });
+    s = s.replace(/[_\-\s]+/g, "_").replace(/^_|_$/g, "");
+    return s || base;
+  }
+  function _kindLabel(kind) { return formatName(kind.replace(/_+/g, " ").trim()); }
+  function _bandOrderKey(base) {
+    for (var i = 0; i < BAND_ORDER.length; i++) {
+      if (_tokenHit(base, BAND_ORDER[i].toLowerCase().replace(/ /g, "_")) !== -1) return i;
+    }
+    return 99;
+  }
+  // Choose the best grouping axis for this figure set; return ordered groups or
+  // null (→ render flat). Axes are tried in priority order and the first that
+  // partitions the set usefully wins.
+  function chooseFigureGrouping(figs, contrasts) {
+    var N = figs.length;
+    function build(valueOf) {
+      var map = {}, order = [];
+      figs.forEach(function (f) {
+        var v = valueOf(_figBase(f)) || "__other__";
+        if (!map[v]) { map[v] = []; order.push(v); }
+        map[v].push(f);
+      });
+      return { map: map, order: order };
+    }
+    // kind: qualifies when it yields 2–15 balanced groups (no group > 70%).
+    var k = build(function (base) { return _figKind(base, contrasts); });
+    if (k.order.length >= 2 && k.order.length <= 15) {
+      var maxShare = Math.max.apply(null, k.order.map(function (v) { return k.map[v].length; })) / N;
+      if (maxShare <= 0.70) {
+        return k.order.map(function (v) { return { key: v, label: _kindLabel(v), figs: k.map[v] }; });
+      }
+    }
+    // contrast / metric / band: qualify at ≥2 values covering ≥60% of figures.
+    var axes = [
+      { valueOf: function (b) { return _axisValue(b, contrasts); },
+        label: function (v) { return (M.contrast_labels && M.contrast_labels[v]) || formatName(v); } },
+      { valueOf: function (b) { return _axisValue(b, GROUP_VOCAB.conn_metric); }, label: metricLabel },
+      { valueOf: function (b) { return _axisValue(b, GROUP_VOCAB.coupling_metric); }, label: metricLabel },
+      { valueOf: function (b) { return _axisValue(b, GROUP_VOCAB.band); }, label: formatName },
+    ];
+    for (var ai = 0; ai < axes.length; ai++) {
+      var g = build(axes[ai].valueOf);
+      var matched = N - (g.map.__other__ ? g.map.__other__.length : 0);
+      var distinct = g.order.filter(function (v) { return v !== "__other__"; }).length;
+      if (distinct >= 2 && matched >= 0.6 * N) {
+        var lab = axes[ai].label;
+        var groups = g.order.filter(function (v) { return v !== "__other__"; })
+          .map(function (v) { return { key: v, label: lab(v), figs: g.map[v] }; });
+        if (g.map.__other__) groups.push({ key: "__other__", label: "Other", figs: g.map.__other__ });
+        return groups;
+      }
+    }
+    return null;
+  }
+  function renderGroupedFigures(groups) {
+    var html = '<div class="figure-groups">';
+    html += '<div class="fig-group-controls">' +
+      '<button type="button" class="fig-toggle-all" data-open="1">Expand all</button>' +
+      '<button type="button" class="fig-toggle-all" data-open="0">Collapse all</button></div>';
+    groups.forEach(function (g, i) {
+      var open = i === 0 ? " open" : "";
+      var sorted = g.figs.slice().sort(function (a, b) {
+        var ba = _figBase(a), bb = _figBase(b);
+        return (_bandOrderKey(ba) - _bandOrderKey(bb)) || ba.localeCompare(bb);
+      });
+      html += '<details class="fig-group"' + open + '>';
+      html += '<summary class="fig-group-summary">' + escapeHtml(g.label) +
+        ' <span class="fig-group-count">' + g.figs.length + '</span></summary>';
+      html += renderFigureRows(sorted);
+      html += '</details>';
+    });
+    html += "</div>";
+    return html;
+  }
+  function bindFigureGroups(root) {
+    (root || document).querySelectorAll(".fig-toggle-all").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var open = btn.getAttribute("data-open") === "1";
+        var scope = btn.closest(".figure-groups") || document;
+        scope.querySelectorAll("details.fig-group").forEach(function (d) { d.open = open; });
+      });
+    });
+  }
+
   function renderFigureRows(figs) {
     if (!figs || figs.length === 0) {
       return '<div class="empty-state"><p>No figures</p></div>';

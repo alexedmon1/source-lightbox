@@ -322,6 +322,69 @@ main {
   background: #fff;
 }
 
+/* === Collapsible figure groups (adaptive grouping of large figure sets) === */
+.figure-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.fig-group-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.fig-toggle-all {
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.fig-toggle-all:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+.fig-group {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-card);
+  overflow: hidden;
+}
+.fig-group-summary {
+  cursor: pointer;
+  padding: 11px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  list-style: none;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fig-group-summary::-webkit-details-marker { display: none; }
+.fig-group-summary::before {
+  content: "\25B6";           /* ▶ collapsed */
+  font-size: 10px;
+  color: var(--text-secondary);
+  transition: transform 0.15s ease;
+}
+.fig-group[open] > .fig-group-summary::before { transform: rotate(90deg); }
+.fig-group[open] > .fig-group-summary {
+  border-bottom: 1px solid var(--border-color);
+}
+.fig-group-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-hover, rgba(128,128,128,0.12));
+  border-radius: 10px;
+  padding: 1px 8px;
+}
+.fig-group > .figure-rows { padding: 12px 14px; }
+
 /* === Circos figures: metric sub-tabs, band rows, small thumbnails === */
 .metric-tabs {
   display: flex;
