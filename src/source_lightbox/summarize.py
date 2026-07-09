@@ -80,6 +80,51 @@ def _nbs_table(tables: list[dict]) -> dict | None:
     return None
 
 
+def _cluster_table(tables: list[dict]):
+    """Pick a vertex cluster-permutation table and the (p, direction) columns to
+    read. The inferential unit for these modules is the *cluster* (with a
+    corrected p), not the per-vertex row — so the digest must read one of these,
+    never the truncated per-vertex ``*_stats.csv``.
+
+    Two shapes, in preference order:
+      A. ``cluster_results.csv`` — per-contrast difference clusters
+         (contrast/band/metric/n_vertices/peak_t/p_corrected); this is what the
+         cluster figures draw.
+      B. the map-adapter ``*_hypotheses.csv`` — cluster rows carrying
+         ``cluster_id``/``n_vertices``/``cluster_p``/``significant`` (used by the
+         connectivity/directed/cross-freq/specparam vertex modules).
+    Returns (table, p_col, direction_col) or (None, None, None).
+    """
+    for t in tables:
+        h = t["headers"]
+        if "p_corrected" in h and "n_vertices" in h and ("contrast" in h or "hypothesis" in h):
+            return t, "p_corrected", ("peak_t" if "peak_t" in h else "cluster_stat")
+    for t in tables:
+        h = t["headers"]
+        if (t["filename"].endswith("_hypotheses.csv") and "cluster_id" in h
+                and "n_vertices" in h and "cluster_p" in h):
+            return t, "cluster_p", ("peak_stat" if "peak_stat" in h else "mass")
+    return None, None, None
+
+
+def _cluster_measure_label(rec: dict) -> str:
+    """Readable measure for a cluster row: band plus its dependent variable, e.g.
+    'Low Gamma relative', 'spectral_slope', 'exponent'. Collapses the redundant
+    case where the band *is* the measure (spectral_slope / peak_alpha maps)."""
+    band = str(rec.get("band") or "").strip()
+    meas = ""
+    for col in ("metric", "dv", "parameter", "measure"):
+        v = rec.get(col)
+        if v not in (None, "") and str(v).strip().lower() not in _DEGENERATE:
+            meas = str(v).strip()
+            break
+    if not band:
+        return meas or "map"
+    if not meas or meas == band or meas.lower() in {"spectral_slope", "peak_alpha"}:
+        return band
+    return f"{band} {meas}"
+
+
 _DEGENERATE = {"", "na", "nan", "none"}
 
 
@@ -142,6 +187,14 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
 
     def _label(name):
         return labels.get(name, name)
+
+    # Vertex cluster-permutation modules: the inferential unit is the cluster
+    # (corrected p), so summarize the cluster table directly — otherwise the
+    # digest would fall through to the truncated per-vertex table and miss most
+    # significant clusters (and every contrast past the first).
+    ctable, c_pcol, c_dcol = _cluster_table(tables)
+    if ctable is not None:
+        return _build_cluster_summary(ctable, c_pcol, c_dcol, _label, groups)
 
     table = _summary_table(tables)
     if table is None:
@@ -299,6 +352,82 @@ def _aggregated_chips(rows, cat, effect_col, effect_fmt, signed, elem_col):
             f'<span class="sig-pairs">{n_el} {unit_s if n_el == 1 else unit_p}</span></span>'
         )
     return chips, len(chips)
+
+
+def _build_cluster_summary(table: dict, p_col: str, dir_col: str,
+                           _label, groups: dict) -> str | None:
+    """Digest a vertex cluster-permutation table: significant clusters per
+    contrast (cluster-corrected p < 0.05), each with its band/measure, spatial
+    extent (n vertices), direction (sign of the peak statistic), and p."""
+    records = _to_native(_records(table["headers"], table["rows"]))
+    has_flag = "significant" in table["headers"]
+    all_contrasts: list[str] = []
+    sig_by_contrast: dict[str, list[dict]] = {}
+    for rec in records:
+        contrast = rec.get("hypothesis") or rec.get("contrast")
+        if not contrast:
+            continue
+        if contrast not in all_contrasts:
+            all_contrasts.append(contrast)
+        p = _to_float(rec.get(p_col))
+        # cluster_results has no `significant` column → gate on the corrected p;
+        # the map hypotheses table carries the adapter's own significance flag
+        # (which also encodes equivalence for TOST rows).
+        is_sig = _is_sig(rec) if has_flag else (p is not None and p < 0.05)
+        if is_sig:
+            sig_by_contrast.setdefault(contrast, []).append(rec)
+
+    if not all_contrasts:
+        return None
+    if not sig_by_contrast:
+        return ('<div class="sig-summary"><p class="sig-lead">'
+                "No significant clusters (cluster-corrected p &lt; 0.05)."
+                "</p></div>")
+
+    item_by_contrast: dict[str, str] = {}
+    n_findings = 0
+    for contrast in all_contrasts:
+        recs = sig_by_contrast.get(contrast)
+        if not recs:
+            continue
+        chips = []
+        for rec in sorted(recs, key=lambda r: (_to_float(r.get(p_col)) if _to_float(r.get(p_col)) is not None else 1.0)):
+            d = _to_float(rec.get(dir_col))
+            arrow = ""
+            if d is not None:
+                arrow = ('<span class="arrow up">&#9650;</span> ' if d > 0
+                         else '<span class="arrow down">&#9660;</span> ')
+            n_vtx = _to_float(rec.get("n_vertices"))
+            extent = (f'<span class="sig-pairs">{int(n_vtx)} '
+                      f'{"vertex" if n_vtx == 1 else "vertices"}</span>') if n_vtx is not None else ""
+            p = _to_float(rec.get(p_col))
+            pstr = f" <span class=\"g\">p={p:.3f}</span>" if p is not None else ""
+            chips.append(
+                f'<span class="sig-item">{arrow}{escape(_cluster_measure_label(rec))} '
+                f'{extent}{pstr}</span>'
+            )
+            n_findings += 1
+        item_by_contrast[contrast] = (
+            f'<li><span class="sig-contrast">{escape(str(_label(contrast)))}</span> '
+            + "".join(chips) + "</li>"
+        )
+
+    body = _render_body(all_contrasts, item_by_contrast, groups)
+    null_contrasts = [c for c in all_contrasts if c not in sig_by_contrast]
+    html = '<div class="sig-summary">'
+    html += (
+        f'<p class="sig-lead">{n_findings} significant cluster'
+        f'{"s" if n_findings != 1 else ""} across {len(sig_by_contrast)} of '
+        f"{len(all_contrasts)} comparisons (cluster-corrected p &lt; 0.05)."
+        ' <span class="sig-key">&#9650;/&#9660; = the first-listed group of each '
+        'pair is higher/lower</span>.</p>'
+    )
+    html += body
+    if null_contrasts:
+        html += ('<p class="sig-none">No significant clusters: '
+                 + ", ".join(escape(_label(c)) for c in null_contrasts) + ".</p>")
+    html += "</div>"
+    return html
 
 
 def _build_nbs_summary(table: dict, _label, groups: dict) -> str | None:

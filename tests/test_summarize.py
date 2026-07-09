@@ -187,3 +187,39 @@ def test_specparam_per_vertex_uses_corrected_significant():
     assert "exponent" in html and "2 vertices" in html
     assert "g=1.30" in html
     assert "offset" not in html   # the offset vertex is not cluster-significant
+
+
+def test_vertex_cluster_digest_reads_corrected_clusters():
+    # cluster_results.csv is the inferential unit (cluster-corrected p_corrected),
+    # not the truncated per-vertex stats. Every contrast with a corrected cluster
+    # must appear — including an equivalence-declared normalization contrast whose
+    # difference clusters the figures draw.
+    clusters = _tbl(
+        "cluster_results.csv",
+        "contrast,band,metric,cluster_id,n_vertices,cluster_stat,peak_t,p_corrected",
+        [
+            "disease_effect,Low Gamma,absolute,1,80,392.1,6.0,0.002",
+            "disease_effect,Delta,relative,1,4,8.7,2.3,0.281",          # ns
+            "hd_icv_normalization,Theta,relative,1,59,-184.8,-5.0,0.005",  # sig, normalization
+            "hd_icv_normalization,Alpha,relative,1,12,-26.8,-2.8,0.135",   # ns
+        ],
+    )
+    # A per-vertex stats table is present too; the digest must NOT prefer it.
+    voxel = _tbl(
+        "voxelwise_stats.csv",
+        "contrast,band,metric,vertex_idx,t,hedges_g,p,cluster_id",
+        ["disease_effect,Low Gamma,absolute,0,6.0,1.4,0.001,1"],
+    )
+    html = build_significance_summary([voxel, clusters],
+                                      contrast_labels={"hd_icv_normalization": "HD-ICV normalization to WT"})
+    assert html is not None
+    assert "cluster-corrected" in html
+    assert "2 significant clusters" in html and "2 of 2 comparisons" in html
+    # normalization difference clusters are surfaced (the reported bug)
+    assert "HD-ICV normalization to WT" in html
+    assert "Low Gamma absolute" in html and "80 vertices" in html
+    assert "Theta relative" in html
+    # direction: negative peak_t -> down arrow; positive -> up
+    assert "arrow up" in html and "arrow down" in html
+    # non-significant clusters excluded
+    assert "12 vertices" not in html
