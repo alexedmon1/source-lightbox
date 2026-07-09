@@ -226,3 +226,35 @@ def test_vertex_cluster_digest_reads_corrected_clusters():
     # anatomical coverage surfaced when the region column is present
     assert "sig-region" in html
     assert "Motor_R 9%" in html and "Cerebellum_R 12%" in html
+
+
+def test_graph_digest_groups_by_graph_parameter():
+    # A graph-theory table must be summarized by graph_metric (which parameters
+    # differ), with bands + conn metrics listed — NOT collapsed to bands, and NOT
+    # fooled into "1 ROI" by the empty `spatial` column.
+    tbl = _tbl(
+        "vertex_graph_hypotheses.csv",
+        "hypothesis,band,spatial,conn_metric,graph_metric,effect_size,effect_size_type,q_value,significant",
+        [
+            "disease_effect,Theta,,imag_coherence,modularity,0.55,hedges_g,0.01,True",
+            "disease_effect,Beta,,aec,modularity,-0.61,hedges_g,0.02,True",
+            "disease_effect,Alpha,,pli,global_efficiency,0.78,hedges_g,0.008,True",
+            "disease_effect,Delta,,pli,global_efficiency,0.20,hedges_g,0.6,False",   # ns
+            "dose_icv,Theta,,aec,transitivity,0.30,hedges_g,0.9,False",              # ns contrast
+        ],
+    )
+    html = build_significance_summary([tbl], contrast_labels={"disease_effect": "Disease effect"})
+    assert html is not None
+    assert "graph-metric finding" in html
+    # graph parameters are named
+    assert "modularity" in html and "global efficiency" in html
+    # bands listed under a parameter (modularity is significant in Theta & Beta)
+    assert "Theta" in html and "Beta" in html
+    # connectivity metric surfaced
+    assert "imag_coherence" in html or "aec" in html
+    # peak effect + direction (global_efficiency peak +0.78 -> up)
+    assert "g&le;0.78" in html and "arrow up" in html
+    # a contrast with no significant graph metric is listed as null
+    assert "No significant graph metrics" in html and "dose_icv" not in html.split("No significant graph metrics")[0]
+    # NOT the per-element "ROI" aggregation
+    assert "1 ROI" not in html

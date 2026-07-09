@@ -80,6 +80,46 @@ def _nbs_table(tables: list[dict]) -> dict | None:
     return None
 
 
+_GRAPH_METRIC_LABEL = {
+    "global_efficiency": "global efficiency",
+    "characteristic_path_length": "char. path length",
+    "mean_clustering": "mean clustering",
+    "mean_local_efficiency": "local efficiency",
+    "small_worldness": "small-worldness",
+    "modularity": "modularity",
+    "transitivity": "transitivity",
+    "assortativity": "assortativity",
+}
+_GRAPH_BAND_ORDER = ["Delta", "Theta", "Alpha", "Beta", "Low Gamma", "High Gamma", "Epsilon"]
+
+
+def _graph_table(tables: list[dict]) -> dict | None:
+    """A *global* graph-theory table: keyed by a ``graph_metric`` (global
+    efficiency, modularity, …) with no populated spatial unit. Summarized by
+    graph parameter, not by band, so the digest names *which* metrics differ.
+
+    Per-ROI *nodal* graph tables (a real ``roi`` column: degree/clustering per
+    node) are NOT matched — they keep the per-element aggregation.
+    """
+    for t in tables:
+        h = t["headers"]
+        if not ("graph_metric" in h and ("hypothesis" in h or "contrast" in h)
+                and ("effect_size" in h or "hedges_g" in h)):
+            continue
+        elem = _element_column(h)
+        if elem:
+            recs = _records(h, t["rows"])
+            if any(str(r.get(elem, "")).strip().lower() not in _DEGENERATE for r in recs):
+                continue  # real per-element axis → not a graph-parameter summary
+        return t
+    return None
+
+
+def _order_graph_bands(bands: set[str]) -> list[str]:
+    known = [b for b in _GRAPH_BAND_ORDER if b in bands]
+    return known + sorted(b for b in bands if b not in _GRAPH_BAND_ORDER)
+
+
 def _cluster_table(tables: list[dict]):
     """Pick a vertex cluster-permutation table and the (p, direction) columns to
     read. The inferential unit for these modules is the *cluster* (with a
@@ -195,6 +235,13 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
     ctable, c_pcol, c_dcol = _cluster_table(tables)
     if ctable is not None:
         return _build_cluster_summary(ctable, c_pcol, c_dcol, _label, groups)
+
+    # Graph-theory modules: summarize by graph parameter (which metrics differ),
+    # not by the generic band axis — and don't let the empty ``spatial`` column
+    # fool the per-element aggregation into a meaningless "1 ROI" count.
+    gtable = _graph_table(tables)
+    if gtable is not None:
+        return _build_graph_summary(gtable, _label, groups)
 
     table = _summary_table(tables)
     if table is None:
@@ -428,6 +475,80 @@ def _build_cluster_summary(table: dict, p_col: str, dir_col: str,
     html += body
     if null_contrasts:
         html += ('<p class="sig-none">No significant clusters: '
+                 + ", ".join(escape(_label(c)) for c in null_contrasts) + ".</p>")
+    html += "</div>"
+    return html
+
+
+def _build_graph_summary(table: dict, _label, groups: dict) -> str | None:
+    """Digest a graph-theory table by graph parameter: for each contrast, which
+    graph metrics differ (global efficiency, modularity, …), in which bands and
+    connectivity metrics, with the peak effect and direction. Answers 'which
+    graph parameters are significant', not just which bands."""
+    records = _to_native(_records(table["headers"], table["rows"]))
+    all_contrasts = _unique(records, "hypothesis")
+    sig_by_contrast: dict[str, list[dict]] = {}
+    for r in records:
+        if _is_sig(r):
+            sig_by_contrast.setdefault(r.get("hypothesis"), []).append(r)
+
+    if not all_contrasts:
+        return None
+    if not any(sig_by_contrast.values()):
+        return ('<div class="sig-summary"><p class="sig-lead">'
+                "No significant graph metrics (FDR q &lt; 0.05).</p></div>")
+
+    def _peak(rs):
+        return max((abs(_to_float(x.get("effect_size")) or 0.0) for x in rs), default=0.0)
+
+    item_by_contrast: dict[str, str] = {}
+    n_findings = 0
+    for contrast in all_contrasts:
+        rows = sig_by_contrast.get(contrast)
+        if not rows:
+            continue
+        by_gm: dict[str, list[dict]] = {}
+        for r in rows:
+            by_gm.setdefault(r.get("graph_metric") or "", []).append(r)
+        chips = []
+        for gm, rs in sorted(by_gm.items(), key=lambda kv: -_peak(kv[1])):
+            best = max(rs, key=lambda x: abs(_to_float(x.get("effect_size")) or 0.0))
+            v = _to_float(best.get("effect_size")) or 0.0
+            signed = str(best.get("effect_size_type", "")).lower() == "hedges_g"
+            arrow = ""
+            if signed:
+                arrow = ('<span class="arrow up">&#9650;</span> ' if v > 0
+                         else '<span class="arrow down">&#9660;</span> ')
+            bands = _order_graph_bands({str(x.get("band")) for x in rs if x.get("band")})
+            conns = sorted({str(x.get("conn_metric")) for x in rs if x.get("conn_metric")})
+            label = _GRAPH_METRIC_LABEL.get(gm, str(gm).replace("_", " "))
+            estr = f"g&le;{abs(v):.2f}" if signed else f"&omega;&sup2;&le;{abs(v):.2f}"
+            band_html = (f' <span class="sig-facet">{escape(", ".join(bands))}</span>'
+                         if bands else "")
+            conn_html = (f' <span class="sig-pairs">{escape(", ".join(conns))}</span>'
+                         if conns else "")
+            chips.append(
+                f'<span class="sig-item">{arrow}<strong>{escape(label)}</strong>'
+                f'{band_html}{conn_html} <span class="g">{estr}</span></span>')
+            n_findings += 1
+        item_by_contrast[contrast] = (
+            f'<li><span class="sig-contrast">{escape(str(_label(contrast)))}</span> '
+            + "".join(chips) + "</li>")
+
+    body = _render_body(all_contrasts, item_by_contrast, groups)
+    n_sig_contrasts = sum(1 for c in sig_by_contrast if sig_by_contrast[c])
+    null_contrasts = [c for c in all_contrasts if not sig_by_contrast.get(c)]
+    html = '<div class="sig-summary">'
+    html += (
+        f'<p class="sig-lead">{n_findings} significant graph-metric finding'
+        f'{"s" if n_findings != 1 else ""} across {n_sig_contrasts} of '
+        f"{len(all_contrasts)} comparisons (FDR q &lt; 0.05)."
+        ' <span class="sig-key">grouped by graph parameter; bands and connectivity '
+        'metric listed; &#9650;/&#9660; = the first-listed group is higher/lower</span>.</p>'
+    )
+    html += body
+    if null_contrasts:
+        html += ('<p class="sig-none">No significant graph metrics: '
                  + ", ".join(escape(_label(c)) for c in null_contrasts) + ".</p>")
     html += "</div>"
     return html
