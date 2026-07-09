@@ -155,6 +155,7 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
                 "domain": m.get("domain", "Other"),
                 "supplements": m.get("supplements"),
                 "description": m.get("description"),
+                "about": m.get("about"),
             }
 
     # Localization entries grouped by source

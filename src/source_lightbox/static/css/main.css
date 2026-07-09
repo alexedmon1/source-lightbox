@@ -593,6 +593,21 @@ main {
   color: var(--text-secondary);
   margin-left: 8px;
 }
+.analysis-about {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  background: var(--surface, #f7f8fa);
+  border-left: 3px solid var(--accent, #4a7de0);
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin: 0 0 14px 0;
+}
+.analysis-about .about-label {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-right: 6px;
+}
 
 .tab-panel {
   display: none;

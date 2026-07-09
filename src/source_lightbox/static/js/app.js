@@ -425,15 +425,21 @@
     // Concise 'significant results by contrast' digest (generated from tables).
     var summaryPanel = data.summary ? '<div class="summary-content">' + data.summary + '</div>' : "";
 
+    // "About this analysis" — what the test is, what it looks at, how to read it
+    // (from the analysis metadata; generic to the analysis type).
+    var aboutPanel = (data.meta && data.meta.about)
+      ? '<div class="analysis-about"><span class="about-label">About this analysis</span> '
+        + escapeHtml(data.meta.about) + '</div>' : "";
+
     // Natural reading order for viewers: summary, then figures, then tables.
     var tabs = [];
     if (summaryPanel) tabs.push({ id: "summary", label: "Summary", count: null, html: summaryPanel });
     if (figPanel) tabs.push({ id: "figures", label: "Figures", count: figCount, html: figPanel });
     if (tablePanel) tabs.push({ id: "tables", label: "Tables", count: tables.length, html: tablePanel });
 
-    var html = "";
+    var html = aboutPanel;
     if (tabs.length === 0) {
-      html = '<div class="empty-state"><p>No figures, tables, or summary for this analysis.</p></div>';
+      html += '<div class="empty-state"><p>No figures, tables, or summary for this analysis.</p></div>';
     } else {
       html += '<div class="tab-bar" role="tablist">';
       tabs.forEach(function (t, i) {
