@@ -114,6 +114,19 @@ def _sig_note(headers: list[str], signed: bool) -> str:
     return "FDR q &lt; 0.05"
 
 
+def _group_pair(rows) -> str:
+    """Name the A-vs-B pairing for a contrast so the ▲/▼ arrows are unambiguous:
+    ▲ = the first-listed group (group_a) is higher. Groups come straight from the
+    stat rows (native group_a/group_b columns)."""
+    if not rows:
+        return ""
+    ga = rows[0].get("group_a")
+    gb = rows[0].get("group_b")
+    if not ga or not gb or str(ga).strip() in _DEGENERATE or str(gb).strip() in _DEGENERATE:
+        return ""
+    return f' <span class="sig-groups">{escape(str(ga))} vs {escape(str(gb))}</span>'
+
+
 def build_significance_summary(tables: list[dict], contrast_labels: dict | None = None,
                                contrast_groups: dict | None = None,
                                region_pair_table: dict | None = None) -> str | None:
@@ -193,8 +206,9 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
                 rp_counts if has_region_pairs else None)
         n_findings += added
         item_by_contrast[contrast] = (
-            f'<li><span class="sig-contrast">{escape(str(_label(contrast)))}</span> '
-            + "".join(chips)
+            f'<li><span class="sig-contrast">{escape(str(_label(contrast)))}</span>'
+            + _group_pair(rows)
+            + " " + "".join(chips)
             + "</li>"
         )
 
@@ -206,7 +220,8 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
         f'<p class="sig-lead">{n_findings} significant effect{"s" if n_findings != 1 else ""} '
         f"across {len(sig_by_contrast)} of {len(all_contrasts)} comparisons "
         f"({_sig_note(headers, signed)})."
-        + (' <span class="sig-key">&#9650; first group higher, &#9660; lower</span>.'
+        + (' <span class="sig-key">&#9650;/&#9660; = the first-listed group of each '
+           'pair is higher/lower</span>.'
            if signed else " <span class=\"sig-key\">decoding above chance</span>.")
         + "</p>"
     )
