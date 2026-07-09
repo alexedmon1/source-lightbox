@@ -448,7 +448,8 @@ def _build_nbs_summary(table: dict, _label, groups: dict) -> str | None:
         p = _to_float(rec.get("p_corrected"))
         n_edges = _to_float(rec.get("n_edges"))
         if p is not None and p < 0.05:
-            sig_by_contrast.setdefault(contrast, []).append((band, metric, n_edges, p))
+            sig_by_contrast.setdefault(contrast, []).append(
+                (band, metric, n_edges, p, rec.get("region")))
 
     if not all_contrasts:
         return None
@@ -464,12 +465,14 @@ def _build_nbs_summary(table: dict, _label, groups: dict) -> str | None:
         if not comps:
             continue
         chips = []
-        for band, metric, n_edges, p in sorted(comps, key=lambda c: (c[3])):
+        for band, metric, n_edges, p, region in sorted(comps, key=lambda c: (c[3])):
             facet = f' <span class="sig-facet">{escape(metric)}</span>' if metric else ""
             edges = f"{int(n_edges)}-edge " if n_edges is not None else ""
+            region_html = (f' <span class="sig-region">{escape(str(region))}</span>'
+                           if region not in (None, "") else "")
             chips.append(
                 f'<span class="sig-item">{escape(band or "")}{facet} '
-                f'<span class="sig-pairs">{edges}sub-network (p={p:.3f})</span></span>'
+                f'<span class="sig-pairs">{edges}sub-network (p={p:.3f})</span>{region_html}</span>'
             )
             n_findings += 1
         item_by_contrast[contrast] = (
