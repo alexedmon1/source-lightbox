@@ -11,6 +11,11 @@
     "itc": "ITC", "ersp": "ERSP", "stp": "STP", "svm": "SVM", "nbs": "NBS",
     "assr": "ASSR", "qc": "QC", "eeg": "EEG", "ica": "ICA", "falff": "fALFF",
     "fdr": "FDR", "aic": "AIC", "bic": "BIC", "se": "SE", "df": "df",
+    // Connectivity / coupling / directed metrics and method acronyms — keep the
+    // canonical mixed case (wPLI, dwPLI, dPLI) consistent everywhere they render.
+    "aec": "AEC", "pli": "PLI", "wpli": "wPLI", "dwpli": "dwPLI", "dpli": "dPLI",
+    "aac": "AAC", "ppc": "PPC", "dtf": "DTF", "te": "TE", "cfc": "CFC",
+    "fcd": "FCD", "auc": "AUC", "tfce": "TFCE", "fooof": "FOOOF", "mi": "MI",
   };
 
   /* ── Group label map for readable contrast display ── */
@@ -1022,7 +1027,9 @@
   var METRIC_ORDER = ["imag_coherence", "dwpli", "pli", "aec", "coherence"];
   var METRIC_LABELS = {
     imag_coherence: "Imag. coherence", coherence: "Coherence",
-    dwpli: "dwPLI", pli: "PLI", aec: "AEC",
+    dwpli: "dwPLI", wpli: "wPLI", pli: "PLI", dpli: "dPLI", aec: "AEC",
+    partial_corr: "Partial corr.", partial_correlation: "Partial corr.",
+    pac: "PAC", aac: "AAC", ppc: "PPC",
   };
   var CONTRAST_UPPER = { hd: "HD", icv: "ICV", iv: "IV", ld: "LD", wt: "WT", veh: "Veh" };
 
