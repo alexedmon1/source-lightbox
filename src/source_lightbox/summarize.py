@@ -616,9 +616,11 @@ def _build_roi_posthoc_summary(table: dict, tables: list[dict], _label, groups: 
                               f'{"s" if len(rs) != 1 else ""}</span>')
                 region_html = f'<span class="sig-region">{", ".join(named)}{tail}</span>'
                 n_findings += len(rs)
-            cls = "sig-item has-region" if region_html else "sig-item"
+            # Every measure is its own block row — so a whole-brain-only contrast
+            # (rescue/exploratory, no surviving per-ROI unit) lines up the same as
+            # a per-ROI one instead of cramming onto a single line.
             chips.append(
-                f'<span class="{cls}"><strong>{escape(measure)}</strong>'
+                f'<span class="sig-item has-region"><strong>{escape(measure)}</strong>'
                 f'{global_html}{count_html}{region_html}</span>')
         item_by_contrast[contrast] = (
             f'<li><span class="sig-contrast">{escape(str(_label(contrast)))}</span> '
