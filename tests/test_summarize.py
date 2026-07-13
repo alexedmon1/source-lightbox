@@ -273,20 +273,41 @@ def test_roi_posthoc_names_significant_rois():
             "disease_effect,High Gamma,Thalamus_R,relative,-1.10,0.02,TRUE",
         ],
     )
-    glob = _tbl(  # region-averaged global table (empty spatial) must NOT be chosen
+    glob = _tbl(  # region-averaged whole-brain effect — shown ALONGSIDE the ROIs
         "roi_psd_posthoc_global.csv",
-        "hypothesis,band,spatial,effect_size,q_value,significant",
-        ["disease_effect,Low Gamma,,1.63,0.03,TRUE"],
+        "hypothesis,band,spatial,dv,effect_size,q_value,significant",
+        ["disease_effect,Low Gamma,,relative,1.63,0.03,TRUE"],
     )
     html = build_significance_summary([glob, roi],
                                       contrast_labels={"disease_effect": "Disease effect"})
     assert html is not None
-    assert "ROI-level effect" in html            # ROI-level digest, not global
+    assert "ROI-level effect" in html            # ROI-level digest
     assert "Frontal_Anterior_L" in html and "Motor_L" in html   # ROIs named
     assert "g=2.52" in html
     assert "Auditory_R" not in html              # non-significant excluded
     assert "arrow up" in html and "arrow down" in html
-    assert "g=1.63" not in html                  # the region-averaged global value is NOT used
+    # BOTH levels: the whole-brain global effect AND the per-ROI breakdown
+    assert "whole-brain" in html and "g=1.63" in html
+
+
+def test_roi_posthoc_global_only_when_no_significant_rois():
+    # An aperiodic-like case: no significant per-ROI unit, but a significant
+    # whole-brain (global) effect must still be reported.
+    roi = _tbl(
+        "roi_aperiodic_posthoc_roi.csv",
+        "hypothesis,band,spatial,dv,effect_size,q_value,significant",
+        ["disease_effect,NA,Motor_L,exponent,0.3,0.7,FALSE",     # none significant
+         "disease_effect,NA,Motor_R,exponent,0.2,0.8,FALSE",
+         "disease_effect,NA,Auditory_L,exponent,0.1,0.9,FALSE"],
+    )
+    glob = _tbl(
+        "roi_aperiodic_posthoc_global.csv",
+        "hypothesis,band,spatial,dv,effect_size,q_value,significant",
+        ["hd_icv_rescue,NA,,offset,-1.2,0.02,TRUE"],
+    )
+    html = build_significance_summary([glob, roi])
+    assert html is not None
+    assert "whole-brain" in html and "offset" in html and "g=1.20" in html
 
 
 def test_electrode_posthoc_says_channels():

@@ -288,7 +288,7 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
     # than the region-averaged global table that hides which units differ.
     rtable = _roi_posthoc_table(tables)
     if rtable is not None:
-        return _build_roi_posthoc_summary(rtable, _label, groups)
+        return _build_roi_posthoc_summary(rtable, tables, _label, groups)
 
     table = _summary_table(tables)
     if table is None:
@@ -531,79 +531,113 @@ def _build_cluster_summary(table: dict, p_col: str, dir_col: str,
     return html
 
 
-def _build_roi_posthoc_summary(table: dict, _label, groups: dict) -> str | None:
-    """Digest a per-ROI/channel posthoc table by NAMING the significant units.
+def _arrow(v) -> str:
+    return ('<span class="arrow up">&#9650;</span>' if (v or 0) > 0
+            else '<span class="arrow down">&#9660;</span>')
 
-    Per contrast, group significant rows by measure (band + dv) and list the
-    ROIs/channels that differ (top by |effect|, with direction + g) plus the
-    total count — the region-averaged global table hides all of this."""
+
+def _build_roi_posthoc_summary(table: dict, tables: list[dict], _label, groups: dict) -> str | None:
+    """Digest parcellated spectral results at BOTH levels, per contrast × measure
+    (band + dv): the whole-brain (region-averaged) effect AND the per-ROI/channel
+    breakdown that names which units differ. Either level may be significant on
+    its own (e.g. a global aperiodic effect with no surviving per-ROI unit)."""
     records = _to_native(_records(table["headers"], table["rows"]))
     elem = _element_column(table["headers"])
     fn = table["filename"].lower()
     unit_word = "channel" if ("electrode" in fn or "channel" in fn) else "ROI"
     all_contrasts = _unique(records, "hypothesis")
-    sig_by_contrast: dict[str, list[dict]] = {}
+
+    # Significant per-unit rows, keyed (contrast, measure).
+    roi_by: dict[tuple, list[dict]] = {}
     for r in records:
         if _is_sig(r) and _to_float(r.get("effect_size")) is not None and r.get(elem):
-            sig_by_contrast.setdefault(r.get("hypothesis"), []).append(r)
+            roi_by.setdefault((r.get("hypothesis"), _roi_measure_label(r)), []).append(r)
+
+    # Significant whole-brain (region-averaged) effects, keyed (contrast, measure).
+    gtbl = next((t for t in tables if "posthoc_global" in t["filename"].lower()), None)
+    global_by: dict[tuple, dict] = {}
+    if gtbl is not None:
+        for r in _to_native(_records(gtbl["headers"], gtbl["rows"])):
+            if _is_sig(r) and _to_float(r.get("effect_size")) is not None:
+                global_by[(r.get("hypothesis"), _roi_measure_label(r))] = r
+    # A contrast may be significant only at the whole-brain level.
+    for c, _mzr in global_by:
+        if c not in all_contrasts:
+            all_contrasts.append(c)
 
     if not all_contrasts:
         return None
-    if not any(sig_by_contrast.values()):
+    if not roi_by and not global_by:
         return ('<div class="sig-summary"><p class="sig-lead">'
-                f"No significant {unit_word}-level effects (FDR q &lt; 0.05).</p></div>")
+                f"No significant spectral effects (FDR q &lt; 0.05).</p></div>")
 
     NAME_CAP = 8
     item_by_contrast: dict[str, str] = {}
     n_findings = 0
+    sig_contrasts: set = set()
     for contrast in all_contrasts:
-        rows = sig_by_contrast.get(contrast)
-        if not rows:
+        # Collect measures from either level for this contrast.
+        meas: dict[str, dict] = {}
+        for (c, mzr), rows in roi_by.items():
+            if c == contrast:
+                meas.setdefault(mzr, {"rois": [], "global": None})["rois"] = rows
+        for (c, mzr), grow in global_by.items():
+            if c == contrast:
+                meas.setdefault(mzr, {"rois": [], "global": None})["global"] = grow
+        if not meas:
             continue
-        by_measure: dict[str, list[dict]] = {}
-        for r in rows:
-            by_measure.setdefault(_roi_measure_label(r), []).append(r)
+        sig_contrasts.add(contrast)
 
-        def _peak(rs):
-            return max((abs(_to_float(x.get("effect_size")) or 0.0) for x in rs), default=0.0)
+        def _peak(m):
+            vals = [abs(_to_float(r.get("effect_size")) or 0.0) for r in m["rois"]]
+            if m["global"] is not None:
+                vals.append(abs(_to_float(m["global"].get("effect_size")) or 0.0))
+            return max(vals, default=0.0)
 
         chips = []
-        for measure, rs in sorted(by_measure.items(), key=lambda kv: -_peak(kv[1])):
-            rs = sorted(rs, key=lambda x: -abs(_to_float(x.get("effect_size")) or 0.0))
-            named = []
-            for r in rs[:NAME_CAP]:
-                v = _to_float(r.get("effect_size")) or 0.0
-                arrow = ('<span class="arrow up">&#9650;</span>' if v > 0
-                         else '<span class="arrow down">&#9660;</span>')
-                named.append(f'{arrow}&nbsp;{escape(str(r.get(elem)))} '
-                             f'<span class="g">g={abs(v):.2f}</span>')
-            more = len(rs) - len(named)
-            tail = f" (+{more} more)" if more > 0 else ""
+        for measure, m in sorted(meas.items(), key=lambda kv: -_peak(kv[1])):
+            global_html = ""
+            if m["global"] is not None:
+                gv = _to_float(m["global"].get("effect_size")) or 0.0
+                global_html = (f' <span class="sig-facet">whole-brain</span> {_arrow(gv)}'
+                               f'<span class="g">g={abs(gv):.2f}</span>')
+                n_findings += 1
+            rs = sorted(m["rois"], key=lambda x: -abs(_to_float(x.get("effect_size")) or 0.0))
+            count_html = region_html = ""
+            if rs:
+                named = []
+                for r in rs[:NAME_CAP]:
+                    v = _to_float(r.get("effect_size")) or 0.0
+                    named.append(f'{_arrow(v)}&nbsp;{escape(str(r.get(elem)))} '
+                                 f'<span class="g">g={abs(v):.2f}</span>')
+                more = len(rs) - len(named)
+                tail = f" (+{more} more)" if more > 0 else ""
+                count_html = (f' <span class="sig-pairs">{len(rs)} {unit_word}'
+                              f'{"s" if len(rs) != 1 else ""}</span>')
+                region_html = f'<span class="sig-region">{", ".join(named)}{tail}</span>'
+                n_findings += len(rs)
+            cls = "sig-item has-region" if region_html else "sig-item"
             chips.append(
-                f'<span class="sig-item has-region"><strong>{escape(measure)}</strong> '
-                f'<span class="sig-pairs">{len(rs)} {unit_word}'
-                f'{"s" if len(rs) != 1 else ""}</span>'
-                f'<span class="sig-region">{", ".join(named)}{tail}</span></span>')
-            n_findings += len(rs)
+                f'<span class="{cls}"><strong>{escape(measure)}</strong>'
+                f'{global_html}{count_html}{region_html}</span>')
         item_by_contrast[contrast] = (
-            f'<li><span class="sig-contrast">{escape(str(_label(contrast)))}</span>'
+            f'<li><span class="sig-contrast">{escape(str(_label(contrast)))}</span> '
             + "".join(chips) + "</li>")
 
     body = _render_body(all_contrasts, item_by_contrast, groups)
-    n_sig_contrasts = sum(1 for c in sig_by_contrast if sig_by_contrast[c])
-    null_contrasts = [c for c in all_contrasts if not sig_by_contrast.get(c)]
+    null_contrasts = [c for c in all_contrasts if c not in sig_contrasts]
     html = '<div class="sig-summary">'
     html += (
         f'<p class="sig-lead">{n_findings} significant {unit_word}-level effect'
-        f'{"s" if n_findings != 1 else ""} across {n_sig_contrasts} of '
+        f'{"s" if n_findings != 1 else ""} across {len(sig_contrasts)} of '
         f"{len(all_contrasts)} comparisons (FDR q &lt; 0.05)."
-        ' <span class="sig-key">significant '
-        f'{unit_word}s named per measure; &#9650;/&#9660; = the first-listed group '
-        'is higher/lower</span>.</p>'
+        ' <span class="sig-key">whole-brain effect + the '
+        f'{unit_word}s that differ; &#9650;/&#9660; = the first-listed group is '
+        'higher/lower</span>.</p>'
     )
     html += body
     if null_contrasts:
-        html += (f'<p class="sig-none">No significant {unit_word}-level effects: '
+        html += (f'<p class="sig-none">No significant effects: '
                  + ", ".join(escape(_label(c)) for c in null_contrasts) + ".</p>")
     html += "</div>"
     return html

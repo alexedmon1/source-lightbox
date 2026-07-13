@@ -133,13 +133,28 @@
 
   // Analyses in a (paradigm, domain) that have data for src — primaries first,
   // each secondary placed immediately after the primary it supplements.
+  // Canonical intra-domain analysis order: PSD (the standard analysis) leads,
+  // then the other primary measures. Names are matched by keyword; unknown
+  // analyses keep their existing (manifest) order after the ranked ones.
+  var ANALYSIS_ORDER = ["psd", "cluster", "aperiodic", "specparam", "spatial",
+                        "connectivity", "cross_freq", "directed", "graph", "nbs",
+                        "comparison", "mvpa", "evoked"];
+  function analysisRank(name) {
+    var n = String(name).toLowerCase();
+    for (var i = 0; i < ANALYSIS_ORDER.length; i++) {
+      if (n.indexOf(ANALYSIS_ORDER[i]) >= 0) return i;
+    }
+    return ANALYSIS_ORDER.length;
+  }
+
   function domainAnalyses(paradigm, domain, src) {
     var analyses = M.paradigms[paradigm] || {};
     var names = Object.keys(analyses).filter(function (a) {
       return analysisHasData(analyses[a], src) && analysisDomain(analyses[a]) === domain;
     });
     var suppOf = function (a) { return analyses[a].meta && analyses[a].meta.supplements; };
-    var prim = names.filter(function (a) { return !suppOf(a); });
+    var prim = names.filter(function (a) { return !suppOf(a); })
+      .sort(function (a, b) { return analysisRank(a) - analysisRank(b); });
     var supp = names.filter(function (a) { return suppOf(a); });
     var out = [];
     prim.forEach(function (p) {
