@@ -307,6 +307,61 @@ def _pretty_metric(m) -> str:
     return _METRIC_DISPLAY.get(str(m).strip().lower(), str(m))
 
 
+# Band-name suffixes (lower/underscored) as they appear in connectivity figure
+# filenames like ``circos_<metric>_<band>.png``. Multi-word bands are listed so
+# ``low_gamma`` is matched before a bare ``gamma``.
+_BAND_SUFFIXES = ("low_gamma", "high_gamma", "epsilon", "delta", "theta",
+                  "alpha", "beta", "gamma")
+
+
+def build_descriptive_matrix_summary(analysis, figure_names,
+                                     contrast_labels=None) -> str | None:
+    """Descriptive digest for a connectivity-*matrix* module that carries no
+    inferential tables — e.g. ``roi_connectivity`` after its per-edge stats were
+    retired (group inference moved to ``*_nbs`` / ``*_graph``). Names the metrics
+    and bands the matrices span and points to the sibling modules that hold the
+    inference, so the gallery entry isn't blank.
+
+    ``figure_names`` are the module's figure filenames (``circos_*``/``heatmap_*``
+    are parsed for ``<metric>``/``<band>``). Returns None if none parse (so it is
+    a no-op for any module that isn't a connectivity-matrix module).
+    """
+    metrics: dict[str, str] = {}
+    bands: set[str] = set()
+    for fn in figure_names or ():
+        stem = None
+        for pre in ("circos_", "heatmap_"):
+            if fn.startswith(pre):
+                stem = fn[len(pre):].rsplit(".", 1)[0]
+                break
+        if stem is None:
+            continue
+        for band in _BAND_SUFFIXES:
+            if stem.endswith("_" + band):
+                metric = stem[: -(len(band) + 1)]
+                if metric:
+                    metrics[metric.lower()] = _pretty_metric(metric)
+                    bands.add(band)
+                break
+    if not metrics:
+        return None
+
+    metric_list = ", ".join(sorted(metrics.values(), key=str.lower))
+    n_metrics, n_bands = len(metrics), len(bands)
+    n_contr = len(contrast_labels) if contrast_labels else 0
+
+    prefix = analysis.rsplit("_", 1)[0]  # roi_connectivity -> roi
+    siblings = (f"<strong>{escape(prefix)}_nbs</strong> (sub-networks) and "
+                f"<strong>{escape(prefix)}_graph</strong> (graph metrics)")
+    contr_txt = f" &times; {n_contr} group contrasts" if n_contr else ""
+    lead = (f"Descriptive connectivity matrices — {n_metrics} "
+            f"metric{'s' if n_metrics != 1 else ''} ({escape(metric_list)}) "
+            f"across {n_bands} band{'s' if n_bands != 1 else ''}{contr_txt}.")
+    note = f"Group-level inference for this family is reported in {siblings}."
+    return ('<div class="sig-summary"><p class="sig-lead">' + lead + "</p>"
+            '<p class="sig-note">' + note + "</p></div>")
+
+
 def _graph_table(tables: list[dict]) -> dict | None:
     """A *global* graph-theory table: keyed by a ``graph_metric`` (global
     efficiency, modularity, …) with no populated spatial unit. Summarized by
@@ -657,6 +712,14 @@ def _build_cluster_summary(table: dict, p_col: str, dir_col: str,
                 "No significant clusters (cluster-corrected p &lt; 0.05)."
                 "</p></div>")
 
+    # Sensor-montage modules (electrode_connectivity) reuse the vertex cluster
+    # schema (``n_vertices``/``peak_vertex``), but the inferential unit is a
+    # channel, not a source vertex — name it accordingly.
+    fn = table["filename"].lower()
+    unit_s, unit_p = (("channel", "channels")
+                      if ("electrode" in fn or "channel" in fn)
+                      else ("vertex", "vertices"))
+
     item_by_contrast: dict[str, str] = {}
     n_findings = 0
     for contrast in all_contrasts:
@@ -672,7 +735,7 @@ def _build_cluster_summary(table: dict, p_col: str, dir_col: str,
                          else '<span class="arrow down">&#9660;</span> ')
             n_vtx = _to_float(rec.get("n_vertices"))
             extent = (f'<span class="sig-pairs">{int(n_vtx)} '
-                      f'{"vertex" if n_vtx == 1 else "vertices"}</span>') if n_vtx is not None else ""
+                      f'{unit_s if n_vtx == 1 else unit_p}</span>') if n_vtx is not None else ""
             p = _to_float(rec.get(p_col))
             pstr = f" <span class=\"g\">p={p:.3f}</span>" if p is not None else ""
             region = rec.get("region")

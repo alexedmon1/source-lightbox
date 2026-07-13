@@ -127,7 +127,7 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
 
     # Summaries — a concise 'significant results by contrast' digest derived from
     # each module's effect-size table, NOT the verbose ANALYSIS_SUMMARY.md verbatim.
-    from .summarize import build_significance_summary
+    from .summarize import build_descriptive_matrix_summary, build_significance_summary
 
     # The digest must run on FULL tables, not the row-capped copies embedded for
     # display — otherwise a large per-unit posthoc table (e.g. roi_psd_posthoc_roi,
@@ -153,6 +153,15 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
             summary_html = build_significance_summary(
                 module_tables, contrast_labels=contrast_labels, contrast_groups=contrast_groups,
                 region_pair_table=region_pair_full.get((paradigm, analysis)))
+            # Descriptive-only matrix modules (e.g. roi_connectivity, whose
+            # per-edge stats were retired) have no stat tables → no significance
+            # digest. Fall back to a descriptive metric/band digest built from the
+            # module's figure filenames, pointing to its inferential siblings.
+            if summary_html is None:
+                fig_names = [f["filename"]
+                             for src in entry["figures"].values() for f in src]
+                summary_html = build_descriptive_matrix_summary(
+                    analysis, fig_names, contrast_labels=contrast_labels)
             entry["summary"] = summary_html
             if summary_html:
                 n_summaries += 1
