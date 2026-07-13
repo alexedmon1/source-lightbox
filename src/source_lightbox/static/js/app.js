@@ -231,8 +231,15 @@
         var lastGroup = null;
         // Sensor-level sections are deferred to the END of their group so they sit
         // after the source-localized study designs (ROI → Vertex → Sensor-level).
-        var pendingSensor = "";
-        function flushSensor() { html += pendingSensor; pendingSensor = ""; }
+        // A group's sensor analyses from EVERY paradigm are merged under ONE
+        // Sensor-level heading (so scalp + source-vs-sensor comparisons sit together).
+        var pendingSensor = "";  // accumulated nav items (no heading)
+        function flushSensor() {
+          if (pendingSensor) {
+            html += '<div class="nav-study-design">' + escapeHtml(SENSOR_DOMAIN) + '</div>' + pendingSensor;
+            pendingSensor = "";
+          }
+        }
         for (var paradigm of Object.keys(M.paradigms)) {
           var analyses = M.paradigms[paradigm];
           var hasData = false;
@@ -262,9 +269,9 @@
             if (domain === SENSOR_DOMAIN) return;
             html += navItem(domainRoute(src, paradigm, domain), domain);
           });
-          // Accumulate Sensor-level into the pending section for this group.
+          // Accumulate this paradigm's Sensor-level analyses (items only) — the
+          // single heading is emitted by flushSensor at the group's end.
           if (pdomains.indexOf(SENSOR_DOMAIN) >= 0) {
-            pendingSensor += '<div class="nav-study-design">' + escapeHtml(SENSOR_DOMAIN) + '</div>';
             domainAnalyses(paradigm, SENSOR_DOMAIN, src).forEach(function (o) {
               pendingSensor += navItem("/analytics/" + encodeURIComponent(src) + "/" +
                 encodeURIComponent(paradigm) + "/" + encodeURIComponent(o.name),
