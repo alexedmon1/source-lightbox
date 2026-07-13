@@ -129,22 +129,27 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
     # each module's effect-size table, NOT the verbose ANALYSIS_SUMMARY.md verbatim.
     from .summarize import build_significance_summary
 
-    # Full (untruncated) region-pair tables, by module — the embedded copies may
-    # be row-capped, which would undercount post-hoc region pairs in the digest.
+    # The digest must run on FULL tables, not the row-capped copies embedded for
+    # display — otherwise a large per-unit posthoc table (e.g. roi_psd_posthoc_roi,
+    # ordered by contrast) is truncated and only the first contrast's ROIs survive.
+    full_tables_by_module: dict[tuple, list[dict]] = {}
     region_pair_full: dict[tuple, dict] = {}
     for tbl in scan.tables:
+        try:
+            data = _read_csv(tbl.src_path)
+        except Exception:  # noqa: BLE001
+            continue
+        full_tables_by_module.setdefault((tbl.paradigm, tbl.analysis), []).append(
+            {"filename": tbl.filename, "headers": data["headers"], "rows": data["rows"]})
         if "region_pair" in tbl.filename:
-            try:
-                region_pair_full[(tbl.paradigm, tbl.analysis)] = _read_csv(tbl.src_path)
-            except Exception:  # noqa: BLE001
-                pass
+            region_pair_full[(tbl.paradigm, tbl.analysis)] = data
 
     n_summaries = 0
     for paradigm, analyses in manifest["paradigms"].items():
         for analysis, entry in analyses.items():
-            module_tables = []
-            for src_tables in entry["tables"].values():
-                module_tables.extend(src_tables)
+            module_tables = full_tables_by_module.get((paradigm, analysis))
+            if not module_tables:  # fall back to embedded copies if a read failed
+                module_tables = [t for src in entry["tables"].values() for t in src]
             summary_html = build_significance_summary(
                 module_tables, contrast_labels=contrast_labels, contrast_groups=contrast_groups,
                 region_pair_table=region_pair_full.get((paradigm, analysis)))
