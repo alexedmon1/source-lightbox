@@ -221,7 +221,8 @@ def build(
         if analytics is None and Path(cfg_analytics).is_dir():
             analytics = cfg_analytics
         if title is None:
-            title = study_cfg.get("name", "Source Analysis Gallery")
+            title = (study_cfg.get("gallery_title")
+                     or study_cfg.get("name", "Source Analysis Gallery"))
         if output is None:
             output = _resolve(paths.get("gallery"), "./gallery")
 

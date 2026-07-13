@@ -175,6 +175,80 @@ def _build_comparison_summary(table: dict, _label, groups: dict) -> str | None:
     return html
 
 
+def _fcd_comparison_table(tables: list[dict]) -> dict | None:
+    """The FCD source-vs-sensor comparison table (mean FCD + spatial CV)."""
+    for t in tables:
+        h = t["headers"]
+        if ("corr_mean_r" in h and "source_mean_g" in h and "sensor_mean_g" in h
+                and ("contrast" in h or "hypothesis" in h)):
+            return t
+    return None
+
+
+def _build_fcd_comparison_summary(table: dict, _label, groups: dict) -> str | None:
+    """Digest the FCD source-vs-sensor comparison: mean-FCD & spatial-CV
+    concordance (r) plus, per contrast, the band × metric measures where the
+    group effect is significant (95% CI excludes 0) at source and/or sensor."""
+    records = _to_native(_records(table["headers"], table["rows"]))
+    all_contrasts = _unique(records, "hypothesis")
+
+    def _rng(col):
+        xs = [_to_float(r.get(col)) for r in records]
+        xs = [x for x in xs if x is not None]
+        return f"{min(xs):.2f}–{max(xs):.2f}" if xs else None
+    parts_r = []
+    if _rng("corr_mean_r"):
+        parts_r.append(f"mean-FCD r = {_rng('corr_mean_r')}")
+    if _rng("corr_cv_r"):
+        parts_r.append(f"spatial-CV r = {_rng('corr_cv_r')}")
+    concord = f' <span class="sig-key">source–sensor concordance: {"; ".join(parts_r)}</span>.' if parts_r else ""
+
+    def _measure(rec):
+        return f"{str(rec.get('band') or '').strip()} {_pretty_metric(rec.get('metric'))}".strip()
+
+    LEVELS = [("mean FCD", "source_mean", "sensor_mean"), ("spatial CV", "source_cv", "sensor_cv")]
+    sig_by_contrast: dict[str, list[dict]] = {}
+    for r in records:
+        if any(_ci_sig(r, s) or _ci_sig(r, e) for _, s, e in LEVELS):
+            sig_by_contrast.setdefault(r.get("hypothesis"), []).append(r)
+
+    item_by_contrast: dict[str, str] = {}
+    n_findings = 0
+    for contrast in all_contrasts:
+        rows = sig_by_contrast.get(contrast)
+        if not rows:
+            continue
+        chips = []
+        for rec in sorted(rows, key=lambda r: -abs(_to_float(r.get("source_mean_g")) or 0.0)):
+            parts = []
+            for lbl, src, sen in LEVELS:
+                if _ci_sig(rec, src) or _ci_sig(rec, sen):
+                    sg = _to_float(rec.get(f"{src}_g")) or 0.0
+                    eg = _to_float(rec.get(f"{sen}_g")) or 0.0
+                    parts.append(f'{lbl}: {_arrow(sg)} source <span class="g">g={abs(sg):.2f}</span>'
+                                 f' · {_arrow(eg)} sensor <span class="g">g={abs(eg):.2f}</span>')
+            chips.append(
+                f'<span class="sig-item has-region"><strong>{escape(_measure(rec))}</strong>'
+                f'<span class="sig-region">{" ; ".join(parts)}</span></span>')
+            n_findings += 1
+        item_by_contrast[contrast] = (
+            f'<li><span class="sig-contrast">{escape(str(_label(contrast)))}</span> '
+            + "".join(chips) + "</li>")
+
+    _fill_nulls(all_contrasts, item_by_contrast, _label, "No significant effect at either level")
+    body = _render_body(all_contrasts, item_by_contrast, groups)
+    html = '<div class="sig-summary">'
+    html += (
+        f'<p class="sig-lead">{n_findings} band/metric FCD measure'
+        f'{"s" if n_findings != 1 else ""} significant at source and/or sensor '
+        f"across {len(sig_by_contrast)} of {len(all_contrasts)} comparisons "
+        f"(95% CI excludes 0).{concord}</p>"
+    )
+    html += body
+    html += "</div>"
+    return html
+
+
 def _roi_posthoc_table(tables: list[dict]) -> dict | None:
     """A per-ROI / per-channel posthoc table: a populated spatial unit column
     (``roi``/``spatial``) at ROI/channel scale (≈3–40 units, not a whole-brain
@@ -391,6 +465,10 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
     cmptable = _comparison_table(tables)
     if cmptable is not None:
         return _build_comparison_summary(cmptable, _label, groups)
+
+    fcdtable = _fcd_comparison_table(tables)
+    if fcdtable is not None:
+        return _build_fcd_comparison_summary(fcdtable, _label, groups)
 
     rtable = _roi_posthoc_table(tables)
     if rtable is not None:
