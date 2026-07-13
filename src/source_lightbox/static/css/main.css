@@ -169,6 +169,18 @@ body {
   padding-left: 34px;
 }
 
+/* A sub-group under a study design (e.g. "Source vs Sensor" under Sensor-level),
+   with its items indented one level further. */
+.nav-subgroup {
+  padding: 4px 16px 2px 34px;
+  font-size: 11px;
+  font-weight: 600;
+  font-style: italic;
+  color: var(--text-muted);
+  cursor: default;
+}
+.nav-subgroup-items .nav-item { padding-left: 46px; }
+
 .nav-divider {
   height: 1px;
   background: var(--border-color);

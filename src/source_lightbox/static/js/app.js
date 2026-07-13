@@ -106,11 +106,14 @@
      (the primary it runs *after*, consuming its output). The gallery shows one
      page per (paradigm × domain); a secondary nests right after its primary as a
      sub-tab. Domain order is fixed; unknown domains fall to the end. */
-  var DOMAIN_ORDER = ["Spectral", "Connectivity", "Cross-frequency", "Sensor-level", "Evoked", "Other"];
+  var DOMAIN_ORDER = ["Spectral", "Connectivity", "Cross-frequency", "Sensor-level", "Source vs Sensor", "Evoked", "Other"];
   // "Sensor-level" is a distinct acquisition level (scalp electrodes, not source-
   // localized ROI/vertex data), so in the nav it is promoted out of its paradigm's
   // domain list into its own study-design heading rather than listed under ROI/vertex.
   var SENSOR_DOMAIN = "Sensor-level";
+  // "Source vs Sensor" holds the source-vs-sensor comparison layers (PSD,
+  // Connectivity); it renders as a sub-group at the end of the Sensor-level section.
+  var COMPARISON_DOMAIN = "Source vs Sensor";
 
   function analysisHasData(ad, src) {
     return (ad.figures[src] && ad.figures[src].length > 0) ||
@@ -181,12 +184,21 @@
   function paradigmGroup(p) { var m = paradigmMeta(p); return (m && m.group) || null; }
   function paradigmLabel(p) { var m = paradigmMeta(p); return (m && m.label) || formatName(p); }
 
-  // The study-design label for an analysis header/breadcrumb. Sensor-level
-  // analyses (scalp electrodes) aren't ROI/vertex source-space, so they read
-  // "Sensor-level", not the paradigm label ("ROI-based") they happen to sit in.
+  // Display name for an analysis (module meta.display_name overrides the
+  // formatted module name), e.g. electrode_comparison → "PSD".
+  function analysisLabel(paradigm, name) {
+    var a = M.paradigms[paradigm] && M.paradigms[paradigm][name];
+    return (a && a.meta && a.meta.display_name) || formatName(name);
+  }
+
+  // The study-design label for an analysis header/breadcrumb. Sensor-level and
+  // Source-vs-Sensor analyses aren't ROI/vertex source-space, so they read their
+  // own design label, not the paradigm label ("ROI-based") they sit in.
   function designLabel(paradigm, analysisName) {
     var ad = M.paradigms[paradigm] && M.paradigms[paradigm][analysisName];
-    if (ad && analysisDomain(ad) === SENSOR_DOMAIN) return SENSOR_DOMAIN;
+    var d = ad && analysisDomain(ad);
+    if (d === COMPARISON_DOMAIN) return COMPARISON_DOMAIN;
+    if (d === SENSOR_DOMAIN) return SENSOR_DOMAIN;
     return paradigmLabel(paradigm);
   }
 
@@ -233,11 +245,16 @@
         // after the source-localized study designs (ROI → Vertex → Sensor-level).
         // A group's sensor analyses from EVERY paradigm are merged under ONE
         // Sensor-level heading (so scalp + source-vs-sensor comparisons sit together).
-        var pendingSensor = "";  // accumulated nav items (no heading)
+        var pendingSensor = "";      // Sensor-level nav items (no heading)
+        var pendingComparison = "";  // Source-vs-Sensor items (own sub-heading)
         function flushSensor() {
-          if (pendingSensor) {
+          if (pendingSensor || pendingComparison) {
             html += '<div class="nav-study-design">' + escapeHtml(SENSOR_DOMAIN) + '</div>' + pendingSensor;
-            pendingSensor = "";
+            if (pendingComparison) {
+              html += '<div class="nav-subgroup">' + escapeHtml(COMPARISON_DOMAIN) + '</div>' +
+                '<div class="nav-subgroup-items">' + pendingComparison + '</div>';
+            }
+            pendingSensor = ""; pendingComparison = "";
           }
         }
         for (var paradigm of Object.keys(M.paradigms)) {
@@ -264,18 +281,22 @@
           // Group analyses by domain (one nav item per domain → domain page).
           // Sensor-level is promoted to its own study-design heading (deferred to the
           // group end), so it is not listed as a domain under this paradigm's label.
+          var analyticBase = "/analytics/" + encodeURIComponent(src) + "/" + encodeURIComponent(paradigm) + "/";
           var pdomains = domainsForParadigm(paradigm, src);
           pdomains.forEach(function (domain) {
-            if (domain === SENSOR_DOMAIN) return;
+            if (domain === SENSOR_DOMAIN || domain === COMPARISON_DOMAIN) return;
             html += navItem(domainRoute(src, paradigm, domain), domain);
           });
-          // Accumulate this paradigm's Sensor-level analyses (items only) — the
-          // single heading is emitted by flushSensor at the group's end.
+          // Sensor-level + Source-vs-Sensor analyses are deferred and merged across
+          // paradigms; the headings are emitted by flushSensor at the group's end.
           if (pdomains.indexOf(SENSOR_DOMAIN) >= 0) {
             domainAnalyses(paradigm, SENSOR_DOMAIN, src).forEach(function (o) {
-              pendingSensor += navItem("/analytics/" + encodeURIComponent(src) + "/" +
-                encodeURIComponent(paradigm) + "/" + encodeURIComponent(o.name),
-                formatName(o.name));
+              pendingSensor += navItem(analyticBase + encodeURIComponent(o.name), analysisLabel(paradigm, o.name));
+            });
+          }
+          if (pdomains.indexOf(COMPARISON_DOMAIN) >= 0) {
+            domainAnalyses(paradigm, COMPARISON_DOMAIN, src).forEach(function (o) {
+              pendingComparison += navItem(analyticBase + encodeURIComponent(o.name), analysisLabel(paradigm, o.name));
             });
           }
         }
@@ -391,7 +412,7 @@
       return;
     }
 
-    setBreadcrumb(analyticsCrumbs(src, [designLabel(paradigm, analysis), formatName(analysis)]));
+    setBreadcrumb(analyticsCrumbs(src, [designLabel(paradigm, analysis), analysisLabel(paradigm, analysis)]));
 
     // Source selector (if multiple sources have this analysis)
     var sources = M.sources.filter(function (s) {
@@ -412,7 +433,7 @@
 
   function renderAnalysisContent(paradigm, analysis, data, source, allSources) {
     var inner = buildAnalysisInner(paradigm, analysis, data, source, allSources, "a");
-    var html = '<h2 class="section-header">' + designLabel(paradigm, analysis) + ' — ' + formatName(analysis) + '</h2>' + inner.html;
+    var html = '<h2 class="section-header">' + designLabel(paradigm, analysis) + ' — ' + analysisLabel(paradigm, analysis) + '</h2>' + inner.html;
     setContent(html);
     initLightbox();
     bindTableToggles(inner.tables);
@@ -522,7 +543,7 @@
           escapeHtml(M.paradigms[paradigm][o.name].meta.supplements) + '"' : "";
         var supTag = o.supp ? ' <span class="pill-supp">supplemental</span>' : "";
         html += '<button class="pill' + (i === 0 ? " active" : "") + '" data-pill="' + i + '"' +
-          supTip + '>' + formatName(o.name) + supTag + "</button>";
+          supTip + '>' + analysisLabel(paradigm, o.name) + supTag + "</button>";
       });
       html += "</div>";
     }
@@ -547,7 +568,7 @@
       var desc = (data.meta && data.meta.description)
         ? ' <span class="analysis-desc">' + escapeHtml(data.meta.description) + '</span>' : "";
       cont.innerHTML = (ordered.length > 1
-        ? '<h3 class="analysis-sub-header">' + formatName(o.name) + desc + '</h3>' : "") + inner.html;
+        ? '<h3 class="analysis-sub-header">' + analysisLabel(paradigm, o.name) + desc + '</h3>' : "") + inner.html;
       initLightbox();
       bindTableToggles(inner.tables, cont);
       bindTabs(cont);
