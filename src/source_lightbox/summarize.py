@@ -450,16 +450,20 @@ def _build_cluster_summary(table: dict, p_col: str, dir_col: str,
             p = _to_float(rec.get(p_col))
             pstr = f" <span class=\"g\">p={p:.3f}</span>" if p is not None else ""
             region = rec.get("region")
-            region_html = (f' <span class="sig-region">{escape(str(region))}</span>'
+            region_html = (f'<span class="sig-region">{escape(str(region))}</span>'
                            if region not in (None, "") else "")
+            cls = "sig-item has-region" if region_html else "sig-item"
             chips.append(
-                f'<span class="sig-item">{arrow}{escape(_cluster_measure_label(rec))} '
+                f'<span class="{cls}">{arrow}{escape(_cluster_measure_label(rec))} '
                 f'{extent}{pstr}{region_html}</span>'
             )
             n_findings += 1
+        # Region-bearing findings render one-per-row (block), so drop the space
+        # separators that would otherwise leave stray gaps between block rows.
+        joiner = "" if any("has-region" in c for c in chips) else " "
         item_by_contrast[contrast] = (
             f'<li><span class="sig-contrast">{escape(str(_label(contrast)))}</span> '
-            + "".join(chips) + "</li>"
+            + joiner.join(chips) + "</li>"
         )
 
     body = _render_body(all_contrasts, item_by_contrast, groups)
@@ -589,16 +593,18 @@ def _build_nbs_summary(table: dict, _label, groups: dict) -> str | None:
         for band, metric, n_edges, p, region in sorted(comps, key=lambda c: (c[3])):
             facet = f' <span class="sig-facet">{escape(metric)}</span>' if metric else ""
             edges = f"{int(n_edges)}-edge " if n_edges is not None else ""
-            region_html = (f' <span class="sig-region">{escape(str(region))}</span>'
+            region_html = (f'<span class="sig-region">{escape(str(region))}</span>'
                            if region not in (None, "") else "")
+            cls = "sig-item has-region" if region_html else "sig-item"
             chips.append(
-                f'<span class="sig-item">{escape(band or "")}{facet} '
+                f'<span class="{cls}">{escape(band or "")}{facet} '
                 f'<span class="sig-pairs">{edges}sub-network (p={p:.3f})</span>{region_html}</span>'
             )
             n_findings += 1
+        joiner = "" if any("has-region" in c for c in chips) else " "
         item_by_contrast[contrast] = (
             f'<li><span class="sig-contrast">{escape(str(_label(contrast)))}</span> '
-            + "".join(chips) + "</li>"
+            + joiner.join(chips) + "</li>"
         )
 
     body = _render_body(all_contrasts, item_by_contrast, groups)

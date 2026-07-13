@@ -912,13 +912,29 @@ main {
   font-style: italic;
 }
 
+/* A finding that carries an anatomical breakdown becomes its own row (block),
+   so the region line can't jumble the inline chip flow. The measure + stats sit
+   on the first line; the region breakdown is indented beneath. */
+.sig-item.has-region {
+  display: block;
+  white-space: normal;
+  line-height: 1.5;
+  margin: 5px 0;
+  padding-left: 1.5em;
+  text-indent: -1.5em;   /* hang the ▲/▼ + label, wrap aligns under the label */
+}
+
 /* Anatomical coverage of a significant cluster (ROI x%, … (+N ROIs ≤5%)). */
 .sig-region {
   display: block;
-  margin-top: 2px;
+  margin-top: 1px;
+  margin-left: 1.5em;
+  text-indent: 0;
   font-size: 11px;
-  color: var(--text-secondary);
+  line-height: 1.45;
+  color: var(--text-muted);
 }
+.sig-item.has-region .sig-pairs { white-space: nowrap; }
 
 .sig-none {
   margin: 14px 0 0;
