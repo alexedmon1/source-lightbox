@@ -254,8 +254,9 @@ def test_graph_digest_groups_by_graph_parameter():
     assert "imag_coherence" in html or "aec" in html
     # peak effect + direction (global_efficiency peak +0.78 -> up)
     assert "g&le;0.78" in html and "arrow up" in html
-    # a contrast with no significant graph metric is listed as null
-    assert "No significant graph metrics" in html and "dose_icv" not in html.split("No significant graph metrics")[0]
+    # a contrast with no significant graph metric renders as an in-place null item
+    assert "sig-null-item" in html and "No significant graph metrics" in html
+    assert "dose_icv" in html
     # NOT the per-element "ROI" aggregation
     assert "1 ROI" not in html
 

@@ -936,6 +936,15 @@ main {
 }
 .sig-item.has-region .sig-pairs { white-space: nowrap; }
 
+/* A comparison that was run but had no significant result — shown in place
+   (dimmed) so it's clear the test happened. */
+.sig-null-item .sig-contrast { font-weight: 600; opacity: 0.75; }
+.sig-none-inline {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
 .sig-none {
   margin: 14px 0 0;
   font-size: 12px;

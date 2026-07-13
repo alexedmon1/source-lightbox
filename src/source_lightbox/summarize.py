@@ -359,8 +359,9 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
             + "</li>"
         )
 
+    _fill_nulls(all_contrasts, item_by_contrast, _label,
+                "decoding not above chance" if not signed else "No significant effects")
     body = _render_body(all_contrasts, item_by_contrast, groups)
-    null_contrasts = [c for c in all_contrasts if c not in sig_by_contrast]
 
     html = '<div class="sig-summary">'
     html += (
@@ -380,12 +381,6 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
             "effect has a circos in the Figures tab.</p>"
         )
     html += body
-    if null_contrasts:
-        html += (
-            '<p class="sig-none">No significant effects: '
-            + ", ".join(escape(_label(c)) for c in null_contrasts)
-            + ".</p>"
-        )
     html += "</div>"
     return html
 
@@ -513,8 +508,8 @@ def _build_cluster_summary(table: dict, p_col: str, dir_col: str,
             + joiner.join(chips) + "</li>"
         )
 
+    _fill_nulls(all_contrasts, item_by_contrast, _label, "No significant clusters")
     body = _render_body(all_contrasts, item_by_contrast, groups)
-    null_contrasts = [c for c in all_contrasts if c not in sig_by_contrast]
     html = '<div class="sig-summary">'
     html += (
         f'<p class="sig-lead">{n_findings} significant cluster'
@@ -524,9 +519,6 @@ def _build_cluster_summary(table: dict, p_col: str, dir_col: str,
         'pair is higher/lower</span>.</p>'
     )
     html += body
-    if null_contrasts:
-        html += ('<p class="sig-none">No significant clusters: '
-                 + ", ".join(escape(_label(c)) for c in null_contrasts) + ".</p>")
     html += "</div>"
     return html
 
@@ -626,8 +618,8 @@ def _build_roi_posthoc_summary(table: dict, tables: list[dict], _label, groups: 
             f'<li><span class="sig-contrast">{escape(str(_label(contrast)))}</span> '
             + "".join(chips) + "</li>")
 
+    _fill_nulls(all_contrasts, item_by_contrast, _label, "No significant effects")
     body = _render_body(all_contrasts, item_by_contrast, groups)
-    null_contrasts = [c for c in all_contrasts if c not in sig_contrasts]
     html = '<div class="sig-summary">'
     html += (
         f'<p class="sig-lead">{n_findings} significant {unit_word}-level effect'
@@ -638,9 +630,6 @@ def _build_roi_posthoc_summary(table: dict, tables: list[dict], _label, groups: 
         'higher/lower</span>.</p>'
     )
     html += body
-    if null_contrasts:
-        html += (f'<p class="sig-none">No significant effects: '
-                 + ", ".join(escape(_label(c)) for c in null_contrasts) + ".</p>")
     html += "</div>"
     return html
 
@@ -700,9 +689,9 @@ def _build_graph_summary(table: dict, _label, groups: dict) -> str | None:
             f'<li><span class="sig-contrast">{escape(str(_label(contrast)))}</span> '
             + "".join(chips) + "</li>")
 
-    body = _render_body(all_contrasts, item_by_contrast, groups)
     n_sig_contrasts = sum(1 for c in sig_by_contrast if sig_by_contrast[c])
-    null_contrasts = [c for c in all_contrasts if not sig_by_contrast.get(c)]
+    _fill_nulls(all_contrasts, item_by_contrast, _label, "No significant graph metrics")
+    body = _render_body(all_contrasts, item_by_contrast, groups)
     html = '<div class="sig-summary">'
     html += (
         f'<p class="sig-lead">{n_findings} significant graph-metric finding'
@@ -712,9 +701,6 @@ def _build_graph_summary(table: dict, _label, groups: dict) -> str | None:
         'metric listed; &#9650;/&#9660; = the first-listed group is higher/lower</span>.</p>'
     )
     html += body
-    if null_contrasts:
-        html += ('<p class="sig-none">No significant graph metrics: '
-                 + ", ".join(escape(_label(c)) for c in null_contrasts) + ".</p>")
     html += "</div>"
     return html
 
@@ -768,8 +754,8 @@ def _build_nbs_summary(table: dict, _label, groups: dict) -> str | None:
             + joiner.join(chips) + "</li>"
         )
 
+    _fill_nulls(all_contrasts, item_by_contrast, _label, "No significant sub-networks")
     body = _render_body(all_contrasts, item_by_contrast, groups)
-    null_contrasts = [c for c in all_contrasts if c not in sig_by_contrast]
     html = '<div class="sig-summary">'
     html += (
         f'<p class="sig-lead">{n_findings} significant sub-network'
@@ -777,11 +763,22 @@ def _build_nbs_summary(table: dict, _label, groups: dict) -> str | None:
         f"{len(all_contrasts)} comparisons (NBS p_corrected &lt; 0.05).</p>"
     )
     html += body
-    if null_contrasts:
-        html += ('<p class="sig-none">No significant sub-networks: '
-                 + ", ".join(escape(_label(c)) for c in null_contrasts) + ".</p>")
     html += "</div>"
     return html
+
+
+def _null_item(label, note: str) -> str:
+    """A list item for a comparison that was run but had no significant result —
+    shown in place, so it's clear the test was done."""
+    return (f'<li class="sig-null-item"><span class="sig-contrast">{escape(str(label))}</span> '
+            f'<span class="sig-none-inline">{note}</span></li>')
+
+
+def _fill_nulls(all_contrasts, item_by_contrast, _label, note: str) -> None:
+    """Add an in-place 'no significant …' item for every contrast without one."""
+    for c in all_contrasts:
+        if c not in item_by_contrast:
+            item_by_contrast[c] = _null_item(_label(c), note)
 
 
 def _render_body(all_contrasts, item_by_contrast, groups: dict) -> str:
