@@ -93,6 +93,46 @@ _GRAPH_METRIC_LABEL = {
 _GRAPH_BAND_ORDER = ["Delta", "Theta", "Alpha", "Beta", "Low Gamma", "High Gamma", "Epsilon"]
 
 
+def _roi_posthoc_table(tables: list[dict]) -> dict | None:
+    """A per-ROI / per-channel posthoc table: a populated spatial unit column
+    (``roi``/``spatial``) at ROI/channel scale (≈3–40 units, not a whole-brain
+    vertex map), plus effect + significance + contrast. Used to name *which*
+    ROIs differ, instead of the region-averaged global table that hides them."""
+    best = None
+    best_units = 0
+    for t in tables:
+        h = t["headers"]
+        if "graph_metric" in h:   # nodal graph tables keep their own aggregation
+            continue
+        if not (("hypothesis" in h or "contrast" in h)
+                and ("effect_size" in h or "hedges_g" in h) and "significant" in h):
+            continue
+        elem = _element_column(h)
+        if elem not in ("roi", "spatial"):   # ROIs/channels only, not vertex maps
+            continue
+        recs = _records(h, t["rows"])
+        units = {str(r.get(elem, "")).strip() for r in recs}
+        units = {u for u in units if u.lower() not in _DEGENERATE}
+        if not (3 <= len(units) <= 40):   # ROI/channel scale, not a vertex map
+            continue
+        # prefer the dedicated posthoc-per-unit table, else the most-detailed one
+        score = (2 if "posthoc_roi" in t["filename"].lower() else
+                 1 if "posthoc" in t["filename"].lower() else 0, len(units))
+        if score > (2 if best and "posthoc_roi" in best["filename"].lower() else
+                    1 if best and "posthoc" in best["filename"].lower() else 0, best_units):
+            best, best_units = t, len(units)
+    return best
+
+
+def _roi_measure_label(rec: dict) -> str:
+    """'Low Gamma relative' / 'exponent' — band + dv, collapsing the NA-band case."""
+    band = str(rec.get("band") or "").strip()
+    dv = str(rec.get("dv") or "").strip()
+    if not band or band.lower() in _DEGENERATE:
+        return dv or "value"
+    return f"{band} {dv}" if dv and dv.lower() not in _DEGENERATE else band
+
+
 def _graph_table(tables: list[dict]) -> dict | None:
     """A *global* graph-theory table: keyed by a ``graph_metric`` (global
     efficiency, modularity, …) with no populated spatial unit. Summarized by
@@ -242,6 +282,13 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
     gtable = _graph_table(tables)
     if gtable is not None:
         return _build_graph_summary(gtable, _label, groups)
+
+    # Parcellated spectral modules (roi_psd/aperiodic, electrode_psd/aperiodic):
+    # name the significant ROIs/channels from the per-unit posthoc table, rather
+    # than the region-averaged global table that hides which units differ.
+    rtable = _roi_posthoc_table(tables)
+    if rtable is not None:
+        return _build_roi_posthoc_summary(rtable, _label, groups)
 
     table = _summary_table(tables)
     if table is None:
@@ -479,6 +526,84 @@ def _build_cluster_summary(table: dict, p_col: str, dir_col: str,
     html += body
     if null_contrasts:
         html += ('<p class="sig-none">No significant clusters: '
+                 + ", ".join(escape(_label(c)) for c in null_contrasts) + ".</p>")
+    html += "</div>"
+    return html
+
+
+def _build_roi_posthoc_summary(table: dict, _label, groups: dict) -> str | None:
+    """Digest a per-ROI/channel posthoc table by NAMING the significant units.
+
+    Per contrast, group significant rows by measure (band + dv) and list the
+    ROIs/channels that differ (top by |effect|, with direction + g) plus the
+    total count — the region-averaged global table hides all of this."""
+    records = _to_native(_records(table["headers"], table["rows"]))
+    elem = _element_column(table["headers"])
+    fn = table["filename"].lower()
+    unit_word = "channel" if ("electrode" in fn or "channel" in fn) else "ROI"
+    all_contrasts = _unique(records, "hypothesis")
+    sig_by_contrast: dict[str, list[dict]] = {}
+    for r in records:
+        if _is_sig(r) and _to_float(r.get("effect_size")) is not None and r.get(elem):
+            sig_by_contrast.setdefault(r.get("hypothesis"), []).append(r)
+
+    if not all_contrasts:
+        return None
+    if not any(sig_by_contrast.values()):
+        return ('<div class="sig-summary"><p class="sig-lead">'
+                f"No significant {unit_word}-level effects (FDR q &lt; 0.05).</p></div>")
+
+    NAME_CAP = 8
+    item_by_contrast: dict[str, str] = {}
+    n_findings = 0
+    for contrast in all_contrasts:
+        rows = sig_by_contrast.get(contrast)
+        if not rows:
+            continue
+        by_measure: dict[str, list[dict]] = {}
+        for r in rows:
+            by_measure.setdefault(_roi_measure_label(r), []).append(r)
+
+        def _peak(rs):
+            return max((abs(_to_float(x.get("effect_size")) or 0.0) for x in rs), default=0.0)
+
+        chips = []
+        for measure, rs in sorted(by_measure.items(), key=lambda kv: -_peak(kv[1])):
+            rs = sorted(rs, key=lambda x: -abs(_to_float(x.get("effect_size")) or 0.0))
+            named = []
+            for r in rs[:NAME_CAP]:
+                v = _to_float(r.get("effect_size")) or 0.0
+                arrow = ('<span class="arrow up">&#9650;</span>' if v > 0
+                         else '<span class="arrow down">&#9660;</span>')
+                named.append(f'{arrow}&nbsp;{escape(str(r.get(elem)))} '
+                             f'<span class="g">g={abs(v):.2f}</span>')
+            more = len(rs) - len(named)
+            tail = f" (+{more} more)" if more > 0 else ""
+            chips.append(
+                f'<span class="sig-item has-region"><strong>{escape(measure)}</strong> '
+                f'<span class="sig-pairs">{len(rs)} {unit_word}'
+                f'{"s" if len(rs) != 1 else ""}</span>'
+                f'<span class="sig-region">{", ".join(named)}{tail}</span></span>')
+            n_findings += len(rs)
+        item_by_contrast[contrast] = (
+            f'<li><span class="sig-contrast">{escape(str(_label(contrast)))}</span>'
+            + "".join(chips) + "</li>")
+
+    body = _render_body(all_contrasts, item_by_contrast, groups)
+    n_sig_contrasts = sum(1 for c in sig_by_contrast if sig_by_contrast[c])
+    null_contrasts = [c for c in all_contrasts if not sig_by_contrast.get(c)]
+    html = '<div class="sig-summary">'
+    html += (
+        f'<p class="sig-lead">{n_findings} significant {unit_word}-level effect'
+        f'{"s" if n_findings != 1 else ""} across {n_sig_contrasts} of '
+        f"{len(all_contrasts)} comparisons (FDR q &lt; 0.05)."
+        ' <span class="sig-key">significant '
+        f'{unit_word}s named per measure; &#9650;/&#9660; = the first-listed group '
+        'is higher/lower</span>.</p>'
+    )
+    html += body
+    if null_contrasts:
+        html += (f'<p class="sig-none">No significant {unit_word}-level effects: '
                  + ", ".join(escape(_label(c)) for c in null_contrasts) + ".</p>")
     html += "</div>"
     return html

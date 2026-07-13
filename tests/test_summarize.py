@@ -258,3 +258,46 @@ def test_graph_digest_groups_by_graph_parameter():
     assert "No significant graph metrics" in html and "dose_icv" not in html.split("No significant graph metrics")[0]
     # NOT the per-element "ROI" aggregation
     assert "1 ROI" not in html
+
+
+def test_roi_posthoc_names_significant_rois():
+    # A per-ROI posthoc table must NAME the significant ROIs per band, not collapse
+    # to the region-averaged global table (which hides which ROIs differ).
+    roi = _tbl(
+        "roi_psd_posthoc_roi.csv",
+        "hypothesis,band,spatial,dv,effect_size,q_value,significant",
+        [
+            "disease_effect,Low Gamma,Frontal_Anterior_L,relative,2.52,0.03,TRUE",
+            "disease_effect,Low Gamma,Motor_L,relative,1.99,0.04,TRUE",
+            "disease_effect,Low Gamma,Auditory_R,relative,0.20,0.6,FALSE",   # ns
+            "disease_effect,High Gamma,Thalamus_R,relative,-1.10,0.02,TRUE",
+        ],
+    )
+    glob = _tbl(  # region-averaged global table (empty spatial) must NOT be chosen
+        "roi_psd_posthoc_global.csv",
+        "hypothesis,band,spatial,effect_size,q_value,significant",
+        ["disease_effect,Low Gamma,,1.63,0.03,TRUE"],
+    )
+    html = build_significance_summary([glob, roi],
+                                      contrast_labels={"disease_effect": "Disease effect"})
+    assert html is not None
+    assert "ROI-level effect" in html            # ROI-level digest, not global
+    assert "Frontal_Anterior_L" in html and "Motor_L" in html   # ROIs named
+    assert "g=2.52" in html
+    assert "Auditory_R" not in html              # non-significant excluded
+    assert "arrow up" in html and "arrow down" in html
+    assert "g=1.63" not in html                  # the region-averaged global value is NOT used
+
+
+def test_electrode_posthoc_says_channels():
+    tbl = _tbl(
+        "electrode_psd_posthoc_channel.csv",
+        "hypothesis,band,spatial,dv,effect_size,q_value,significant",
+        ["disease_effect,Low Gamma,Fp1,relative,1.5,0.01,TRUE",
+         "disease_effect,Low Gamma,Fp2,relative,1.4,0.02,TRUE",
+         "disease_effect,Low Gamma,Cz,relative,1.3,0.03,TRUE"],
+    )
+    html = build_significance_summary([tbl])
+    assert html is not None
+    assert "channel-level effect" in html and "3 channels" in html
+    assert "Fp1" in html and "ROI" not in html
