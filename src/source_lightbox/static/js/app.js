@@ -181,6 +181,15 @@
   function paradigmGroup(p) { var m = paradigmMeta(p); return (m && m.group) || null; }
   function paradigmLabel(p) { var m = paradigmMeta(p); return (m && m.label) || formatName(p); }
 
+  // The study-design label for an analysis header/breadcrumb. Sensor-level
+  // analyses (scalp electrodes) aren't ROI/vertex source-space, so they read
+  // "Sensor-level", not the paradigm label ("ROI-based") they happen to sit in.
+  function designLabel(paradigm, analysisName) {
+    var ad = M.paradigms[paradigm] && M.paradigms[paradigm][analysisName];
+    if (ad && analysisDomain(ad) === SENSOR_DOMAIN) return SENSOR_DOMAIN;
+    return paradigmLabel(paradigm);
+  }
+
   /* ── Sidebar ── */
   function buildSidebar() {
     var nav = document.getElementById("sidebar-nav");
@@ -375,7 +384,7 @@
       return;
     }
 
-    setBreadcrumb(analyticsCrumbs(src, [paradigmLabel(paradigm), formatName(analysis)]));
+    setBreadcrumb(analyticsCrumbs(src, [designLabel(paradigm, analysis), formatName(analysis)]));
 
     // Source selector (if multiple sources have this analysis)
     var sources = M.sources.filter(function (s) {
@@ -396,7 +405,7 @@
 
   function renderAnalysisContent(paradigm, analysis, data, source, allSources) {
     var inner = buildAnalysisInner(paradigm, analysis, data, source, allSources, "a");
-    var html = '<h2 class="section-header">' + paradigmLabel(paradigm) + ' — ' + formatName(analysis) + '</h2>' + inner.html;
+    var html = '<h2 class="section-header">' + designLabel(paradigm, analysis) + ' — ' + formatName(analysis) + '</h2>' + inner.html;
     setContent(html);
     initLightbox();
     bindTableToggles(inner.tables);
@@ -490,11 +499,15 @@
       setContent('<div class="empty-state"><p>Nothing in this domain.</p></div>');
       return;
     }
-    setBreadcrumb(analyticsCrumbs(src, [paradigmLabel(paradigm), domain]));
+    // Sensor-level is its own study design (scalp, not ROI/vertex), so it isn't
+    // sub-labelled "ROI-based"; show its group (e.g. "Resting") instead.
+    var isSensor = (domain === SENSOR_DOMAIN);
+    var domainSub = isSensor ? (paradigmGroup(paradigm) || "") : paradigmLabel(paradigm);
+    setBreadcrumb(analyticsCrumbs(src, isSensor ? [domain] : [paradigmLabel(paradigm), domain]));
     clearSourceSelector();
 
     var html = '<h2 class="section-header">' + escapeHtml(domain) +
-      ' <span class="domain-sub">' + paradigmLabel(paradigm) + '</span></h2>';
+      (domainSub ? ' <span class="domain-sub">' + escapeHtml(domainSub) + '</span>' : "") + '</h2>';
     if (ordered.length > 1) {
       html += '<div class="pill-bar" role="tablist">';
       ordered.forEach(function (o, i) {

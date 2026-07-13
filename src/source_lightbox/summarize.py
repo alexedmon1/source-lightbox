@@ -93,6 +93,88 @@ _GRAPH_METRIC_LABEL = {
 _GRAPH_BAND_ORDER = ["Delta", "Theta", "Alpha", "Beta", "Low Gamma", "High Gamma", "Epsilon"]
 
 
+def _comparison_table(tables: list[dict]) -> dict | None:
+    """A source-vs-sensor comparison table (electrode_comparison): per band/dv ×
+    contrast, a concordance ``correlation_r`` plus ``source_hedges_g`` /
+    ``electrode_hedges_g`` with CIs."""
+    cands = [t for t in tables
+             if "correlation_r" in t["headers"] and "source_hedges_g" in t["headers"]
+             and "electrode_hedges_g" in t["headers"]
+             and ("contrast" in t["headers"] or "hypothesis" in t["headers"])]
+    if not cands:
+        return None
+    # Prefer the spectral band-power comparison over the aperiodic one.
+    cands.sort(key=lambda t: ("aperiodic" in t["filename"].lower(), t["filename"]))
+    return cands[0]
+
+
+def _ci_sig(rec: dict, level: str) -> bool:
+    """True if the ``{level}_hedges_g`` CI excludes zero (same-sign bounds)."""
+    lo = _to_float(rec.get(f"{level}_ci_lo"))
+    hi = _to_float(rec.get(f"{level}_ci_hi"))
+    return lo is not None and hi is not None and lo != 0 and (lo > 0) == (hi > 0)
+
+
+def _build_comparison_summary(table: dict, _label, groups: dict) -> str | None:
+    """Digest the source-vs-sensor comparison: cross-subject concordance (r) plus,
+    per contrast, the band/power measures where the group effect is significant
+    (95% CI excludes 0) at the source and/or sensor level, and which localizes it
+    more sharply."""
+    records = _to_native(_records(table["headers"], table["rows"]))
+    all_contrasts = _unique(records, "hypothesis")
+
+    rs_all = [_to_float(r.get("correlation_r")) for r in records]
+    rs_all = [x for x in rs_all if x is not None]
+    concord = ""
+    if rs_all:
+        concord = (' <span class="sig-key">source–sensor concordance r = '
+                   f'{min(rs_all):.2f}–{max(rs_all):.2f} (median {sorted(rs_all)[len(rs_all)//2]:.2f})</span>.')
+
+    def _measure(rec):
+        band = str(rec.get("band") or "").strip()
+        pt = str(rec.get("power_type") or rec.get("dv") or "").strip()
+        return f"{band} {pt}".strip() if band else (pt or "value")
+
+    sig_by_contrast: dict[str, list[dict]] = {}
+    for r in records:
+        if _ci_sig(r, "source") or _ci_sig(r, "electrode"):
+            sig_by_contrast.setdefault(r.get("hypothesis"), []).append(r)
+
+    item_by_contrast: dict[str, str] = {}
+    n_findings = 0
+    for contrast in all_contrasts:
+        rows = sig_by_contrast.get(contrast)
+        if not rows:
+            continue
+        chips = []
+        for rec in sorted(rows, key=lambda r: -abs(_to_float(r.get("source_hedges_g")) or 0.0)):
+            sg = _to_float(rec.get("source_hedges_g")) or 0.0
+            eg = _to_float(rec.get("electrode_hedges_g")) or 0.0
+            src = f'{_arrow(sg)} source <span class="g">g={abs(sg):.2f}</span>{"" if _ci_sig(rec,"source") else " (ns)"}'
+            sen = f'{_arrow(eg)} sensor <span class="g">g={abs(eg):.2f}</span>{"" if _ci_sig(rec,"electrode") else " (ns)"}'
+            sharper = ' <span class="sig-facet">source localizes sharper</span>' if abs(sg) > abs(eg) else ""
+            chips.append(
+                f'<span class="sig-item has-region"><strong>{escape(_measure(rec))}</strong> '
+                f'<span class="sig-region">{src} · {sen}{sharper}</span></span>')
+            n_findings += 1
+        item_by_contrast[contrast] = (
+            f'<li><span class="sig-contrast">{escape(str(_label(contrast)))}</span> '
+            + "".join(chips) + "</li>")
+
+    _fill_nulls(all_contrasts, item_by_contrast, _label, "No significant effect at either level")
+    body = _render_body(all_contrasts, item_by_contrast, groups)
+    html = '<div class="sig-summary">'
+    html += (
+        f'<p class="sig-lead">{n_findings} band/power measure'
+        f'{"s" if n_findings != 1 else ""} significant at source and/or sensor '
+        f"across {len(sig_by_contrast)} of {len(all_contrasts)} comparisons "
+        f"(95% CI excludes 0).{concord}</p>"
+    )
+    html += body
+    html += "</div>"
+    return html
+
+
 def _roi_posthoc_table(tables: list[dict]) -> dict | None:
     """A per-ROI / per-channel posthoc table: a populated spatial unit column
     (``roi``/``spatial``) at ROI/channel scale (≈3–40 units, not a whole-brain
@@ -304,6 +386,12 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
     # Parcellated spectral modules (roi_psd/aperiodic, electrode_psd/aperiodic):
     # name the significant ROIs/channels from the per-unit posthoc table, rather
     # than the region-averaged global table that hides which units differ.
+    # Source-vs-sensor comparison (electrode_comparison): concordance + which
+    # measures are significant at each level.
+    cmptable = _comparison_table(tables)
+    if cmptable is not None:
+        return _build_comparison_summary(cmptable, _label, groups)
+
     rtable = _roi_posthoc_table(tables)
     if rtable is not None:
         return _build_roi_posthoc_summary(rtable, tables, _label, groups)
