@@ -251,7 +251,7 @@ def test_graph_digest_groups_by_graph_parameter():
     # bands listed under a parameter (modularity is significant in Theta & Beta)
     assert "Theta" in html and "Beta" in html
     # connectivity metric surfaced
-    assert "imag_coherence" in html or "aec" in html
+    assert "Imag. coherence" in html or "AEC" in html   # metric acronyms capitalized
     # peak effect + direction (global_efficiency peak +0.78 -> up)
     assert "g&le;0.78" in html and "arrow up" in html
     # a contrast with no significant graph metric renders as an in-place null item

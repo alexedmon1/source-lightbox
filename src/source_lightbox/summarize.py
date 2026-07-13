@@ -133,6 +133,24 @@ def _roi_measure_label(rec: dict) -> str:
     return f"{band} {dv}" if dv and dv.lower() not in _DEGENERATE else band
 
 
+# Canonical display for connectivity/coupling/method acronyms (matches the
+# figure labels), so digests show 'AEC', 'dwPLI', … not 'aec', 'dwpli'.
+_METRIC_DISPLAY = {
+    "imag_coherence": "Imag. coherence", "coherence": "Coherence",
+    "dwpli": "dwPLI", "wpli": "wPLI", "pli": "PLI", "dpli": "dPLI", "aec": "AEC",
+    "partial_corr": "Partial corr.", "partial_correlation": "Partial corr.",
+    "pac": "PAC", "aac": "AAC", "ppc": "PPC", "dtf": "DTF", "te": "TE",
+    "inflow": "inflow", "outflow": "outflow", "netflow": "netflow",
+}
+
+
+def _pretty_metric(m) -> str:
+    """Display form of a metric/measure token (AEC, dwPLI, …); pass others through."""
+    if m is None:
+        return ""
+    return _METRIC_DISPLAY.get(str(m).strip().lower(), str(m))
+
+
 def _graph_table(tables: list[dict]) -> dict | None:
     """A *global* graph-theory table: keyed by a ``graph_metric`` (global
     efficiency, modularity, …) with no populated spatial unit. Summarized by
@@ -199,10 +217,10 @@ def _cluster_measure_label(rec: dict) -> str:
             meas = str(v).strip()
             break
     if not band:
-        return meas or "map"
+        return _pretty_metric(meas) or "map"
     if not meas or meas == band or meas.lower() in {"spectral_slope", "peak_alpha"}:
         return band
-    return f"{band} {meas}"
+    return f"{band} {_pretty_metric(meas)}"
 
 
 _DEGENERATE = {"", "na", "nan", "none"}
@@ -395,10 +413,10 @@ def _per_record_chips(rows, cat, effect_col, effect_fmt, signed, facet_col, rp_c
         if signed:
             arrow = (f'<span class="arrow up">&#9650;</span> ' if v > 0
                      else '<span class="arrow down">&#9660;</span> ')
-        band = escape(str(rec.get(cat, "")))
+        band = f"<strong>{escape(str(rec.get(cat, '')))}</strong>"
         facet = ""
         if facet_col and rec.get(facet_col):
-            facet = ' <span class="sig-facet">' + escape(str(rec[facet_col])) + "</span>"
+            facet = ' <span class="sig-facet">' + escape(_pretty_metric(rec[facet_col])) + "</span>"
         pairs = ""
         if rp_counts is not None:  # connectivity: annotate with gated region-pair detail
             k = (rec.get("hypothesis"), rec.get(cat), rec.get(facet_col) if facet_col else None)
@@ -436,7 +454,7 @@ def _aggregated_chips(rows, cat, effect_col, effect_fmt, signed, elem_col):
                      else '<span class="arrow down">&#9660;</span> ')
         n_el = len({r.get(elem_col) for r in recs})
         chips.append(
-            f'<span class="sig-item">{arrow}{escape(cat_val)} '
+            f'<span class="sig-item">{arrow}<strong>{escape(_pretty_metric(cat_val))}</strong> '
             f'<span class="g">{effect_fmt(v)}</span> '
             f'<span class="sig-pairs">{n_el} {unit_s if n_el == 1 else unit_p}</span></span>'
         )
@@ -496,7 +514,7 @@ def _build_cluster_summary(table: dict, p_col: str, dir_col: str,
                            if region not in (None, "") else "")
             cls = "sig-item has-region" if region_html else "sig-item"
             chips.append(
-                f'<span class="{cls}">{arrow}{escape(_cluster_measure_label(rec))} '
+                f'<span class="{cls}">{arrow}<strong>{escape(_cluster_measure_label(rec))}</strong> '
                 f'{extent}{pstr}{region_html}</span>'
             )
             n_findings += 1
@@ -674,7 +692,7 @@ def _build_graph_summary(table: dict, _label, groups: dict) -> str | None:
                 arrow = ('<span class="arrow up">&#9650;</span> ' if v > 0
                          else '<span class="arrow down">&#9660;</span> ')
             bands = _order_graph_bands({str(x.get("band")) for x in rs if x.get("band")})
-            conns = sorted({str(x.get("conn_metric")) for x in rs if x.get("conn_metric")})
+            conns = sorted({_pretty_metric(x.get("conn_metric")) for x in rs if x.get("conn_metric")})
             label = _GRAPH_METRIC_LABEL.get(gm, str(gm).replace("_", " "))
             estr = f"g&le;{abs(v):.2f}" if signed else f"&omega;&sup2;&le;{abs(v):.2f}"
             band_html = (f' <span class="sig-facet">{escape(", ".join(bands))}</span>'
@@ -738,13 +756,15 @@ def _build_nbs_summary(table: dict, _label, groups: dict) -> str | None:
             continue
         chips = []
         for band, metric, n_edges, p, region in sorted(comps, key=lambda c: (c[3])):
-            facet = f' <span class="sig-facet">{escape(metric)}</span>' if metric else ""
+            facet = (f' <span class="sig-facet">{escape(_pretty_metric(metric))}</span>'
+                     if metric else "")
             edges = f"{int(n_edges)}-edge " if n_edges is not None else ""
             region_html = (f'<span class="sig-region">{escape(str(region))}</span>'
                            if region not in (None, "") else "")
             cls = "sig-item has-region" if region_html else "sig-item"
+            band_html = f"<strong>{escape(band)}</strong>" if band else ""
             chips.append(
-                f'<span class="{cls}">{escape(band or "")}{facet} '
+                f'<span class="{cls}">{band_html}{facet} '
                 f'<span class="sig-pairs">{edges}sub-network (p={p:.3f})</span>{region_html}</span>'
             )
             n_findings += 1
