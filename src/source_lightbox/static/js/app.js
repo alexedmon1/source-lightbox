@@ -1047,7 +1047,7 @@
       '<button type="button" class="fig-toggle-all" data-open="1">Expand all</button>' +
       '<button type="button" class="fig-toggle-all" data-open="0">Collapse all</button></div>';
     groups.forEach(function (g, i) {
-      var open = i === 0 ? " open" : "";
+      var open = "";  // all figure groups start collapsed (nothing shown until clicked)
       var sorted = g.figs.slice().sort(function (a, b) {
         var ba = _figBase(a), bb = _figBase(b);
         return (_bandOrderKey(ba) - _bandOrderKey(bb)) || ba.localeCompare(bb);
@@ -1109,7 +1109,7 @@
       '<button type="button" class="fig-toggle-all" data-open="1">Expand all</button>' +
       '<button type="button" class="fig-toggle-all" data-open="0">Collapse all</button></div>';
     nested.forEach(function (mg, i) {
-      var open = i === 0 ? " open" : "";
+      var open = "";  // all figure groups start collapsed (nothing shown until clicked)
       var count = mg.kinds.reduce(function (n, k) { return n + k.figs.length; }, 0);
       html += '<details class="fig-group"' + open + '>';
       html += '<summary class="fig-group-summary">' + escapeHtml(mg.label) +
