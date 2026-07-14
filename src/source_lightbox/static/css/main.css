@@ -396,6 +396,20 @@ main {
   padding: 1px 8px;
 }
 .fig-group > .figure-rows { padding: 12px 14px; }
+/* Figure-type sub-header inside a metric group (metric → figure type) */
+.fig-subgroup-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 10px 14px 2px;
+  border-top: 1px solid var(--border, rgba(128,128,128,0.18));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fig-group > .fig-subgroup-title:first-of-type { border-top: none; }
 
 /* === Circos figures: metric sub-tabs, band rows, small thumbnails === */
 .metric-tabs {
@@ -684,6 +698,41 @@ main {
   margin-right: 6px;
 }
 
+/* Connectivity metric-definitions glossary (collapsible) */
+.metric-glossary {
+  font-size: 13px;
+  background: var(--surface, #f7f8fa);
+  border-left: 3px solid var(--accent, #4a7de0);
+  border-radius: 4px;
+  padding: 4px 14px;
+  margin: 0 0 14px 0;
+}
+.metric-glossary-summary {
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 6px 0;
+  list-style: none;
+}
+.metric-glossary-summary::-webkit-details-marker { display: none; }
+.metric-glossary-summary::before { content: "\25B6"; margin-right: 8px; font-size: 10px; }
+.metric-glossary[open] > .metric-glossary-summary::before { content: "\25BC"; }
+.metric-glossary-list { margin: 4px 0 10px; line-height: 1.5; }
+.metric-glossary-list dt {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: 8px;
+}
+.metric-glossary-list dd {
+  margin: 2px 0 0 0;
+  color: var(--text-secondary);
+}
+.metric-glossary-list .metric-cite {
+  font-style: italic;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
 .tab-panel {
   display: none;
   padding-top: 18px;
@@ -905,6 +954,9 @@ main {
 
 .sig-item .arrow.up { color: #c0392b; font-weight: 700; }
 .sig-item .arrow.down { color: #2c6fb5; font-weight: 700; }
+/* Mixed-direction NBS sub-network: ▲n increases / ▼n decreases */
+.sig-mixed { font-weight: 700; font-size: 12px; white-space: nowrap; }
+.sig-mixed::first-letter { color: #c0392b; }
 
 .sig-item .g {
   color: var(--text-secondary);

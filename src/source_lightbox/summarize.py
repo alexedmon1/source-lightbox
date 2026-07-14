@@ -968,7 +968,9 @@ def _build_nbs_summary(table: dict, _label, groups: dict) -> str | None:
         n_edges = _to_float(rec.get("n_edges"))
         if p is not None and p < 0.05:
             sig_by_contrast.setdefault(contrast, []).append(
-                (band, metric, n_edges, p, rec.get("region")))
+                (band, metric, n_edges, p, rec.get("region"), rec.get("direction"),
+                 _to_float(rec.get("n_edges_increase")),
+                 _to_float(rec.get("n_edges_decrease"))))
 
     if not all_contrasts:
         return None
@@ -984,16 +986,29 @@ def _build_nbs_summary(table: dict, _label, groups: dict) -> str | None:
         if not comps:
             continue
         chips = []
-        for band, metric, n_edges, p, region in sorted(comps, key=lambda c: (c[3])):
+        for band, metric, n_edges, p, region, direction, n_inc, n_dec in sorted(
+                comps, key=lambda c: (c[3])):
             facet = (f' <span class="sig-facet">{escape(_pretty_metric(metric))}</span>'
                      if metric else "")
             edges = f"{int(n_edges)}-edge " if n_edges is not None else ""
+            # Direction: NBS thresholds |t|, so a sub-network can be up-, down-, or
+            # mixed-regulation. ▲ = group A > B, ▼ = group A < B.
+            dstr = str(direction or "").strip().lower()
+            if dstr == "increase":
+                arrow = '<span class="arrow up">&#9650;</span> '
+            elif dstr == "decrease":
+                arrow = '<span class="arrow down">&#9660;</span> '
+            elif dstr == "mixed" and n_inc is not None and n_dec is not None:
+                arrow = (f'<span class="sig-mixed">&#9650;{int(n_inc)}/'
+                         f'&#9660;{int(n_dec)}</span> ')
+            else:
+                arrow = ""
             region_html = (f'<span class="sig-region">{escape(str(region))}</span>'
                            if region not in (None, "") else "")
             cls = "sig-item has-region" if region_html else "sig-item"
             band_html = f"<strong>{escape(band)}</strong>" if band else ""
             chips.append(
-                f'<span class="{cls}">{band_html}{facet} '
+                f'<span class="{cls}">{arrow}{band_html}{facet} '
                 f'<span class="sig-pairs">{edges}sub-network (p={p:.3f})</span>{region_html}</span>'
             )
             n_findings += 1

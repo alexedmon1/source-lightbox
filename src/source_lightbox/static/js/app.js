@@ -462,8 +462,14 @@
       if (figs[0].filename.indexOf("circos__") === 0) {
         figPanel = renderCircosFigures(figs);
       } else {
-        var groups = figs.length > 8 ? chooseFigureGrouping(figs, _contrastVocab()) : null;
-        figPanel = groups ? renderGroupedFigures(groups) : renderFigureRows(figs);
+        // Connectivity-matrix modules: metric (AEC, …) first, then figure type.
+        var nested = figs.length > 8 ? chooseNestedConnectivityGrouping(figs, _contrastVocab()) : null;
+        if (nested) {
+          figPanel = renderNestedMetricFigures(nested);
+        } else {
+          var groups = figs.length > 8 ? chooseFigureGrouping(figs, _contrastVocab()) : null;
+          figPanel = groups ? renderGroupedFigures(groups) : renderFigureRows(figs);
+        }
       }
     }
 
@@ -499,7 +505,10 @@
     if (figPanel) tabs.push({ id: "figures", label: "Figures", count: figCount, html: figPanel });
     if (tablePanel) tabs.push({ id: "tables", label: "Tables", count: tables.length, html: tablePanel });
 
-    var html = aboutPanel;
+    // Connectivity-family analyses get a collapsible metric-definitions glossary.
+    var glossaryPanel = isConnectivityFamily(analysis) ? renderMetricGlossary() : "";
+
+    var html = aboutPanel + glossaryPanel;
     if (tabs.length === 0) {
       html += '<div class="empty-state"><p>No figures, tables, or summary for this analysis.</p></div>';
     } else {
@@ -1052,6 +1061,69 @@
     html += "</div>";
     return html;
   }
+  // Connectivity-matrix modules (e.g. roi_connectivity): organize figures by
+  // metric (AEC, Coherence, …) FIRST, then by figure type (Circos / Heatmap /
+  // Matrix), then band. Returns [{metric,label,kinds:[{kind,label,figs}]}] or
+  // null when the set isn't metric×figure-type shaped.
+  function chooseNestedConnectivityGrouping(figs, contrasts) {
+    function metricOf(b) { return _axisValue(b, GROUP_VOCAB.conn_metric); }
+    var nMetric = figs.filter(function (f) { return metricOf(_figBase(f)); }).length;
+    if (nMetric < 0.5 * figs.length) return null;      // not a metric-keyed set
+    var byMetric = {}, morder = [], kinds = {};
+    figs.forEach(function (f) {
+      var base = _figBase(f);
+      var m = metricOf(base) || "__other__";
+      var kind = _figKind(base, contrasts) || "figures";
+      kinds[kind] = true;
+      if (!byMetric[m]) { byMetric[m] = {}; morder.push(m); }
+      (byMetric[m][kind] = byMetric[m][kind] || []).push(f);
+    });
+    var distinctMetrics = morder.filter(function (m) { return m !== "__other__"; }).length;
+    if (distinctMetrics < 2 || Object.keys(kinds).length < 2) return null;
+    morder.sort(function (a, b) {
+      if (a === "__other__") return 1;
+      if (b === "__other__") return -1;
+      var ia = METRIC_ORDER.indexOf(a), ib = METRIC_ORDER.indexOf(b);
+      if (ia === -1) ia = 99;
+      if (ib === -1) ib = 99;
+      return ia - ib || a.localeCompare(b);
+    });
+    function bandSort(a, b) {
+      var ba = _figBase(a), bb = _figBase(b);
+      return (_bandOrderKey(ba) - _bandOrderKey(bb)) || ba.localeCompare(bb);
+    }
+    return morder.map(function (m) {
+      var kmap = byMetric[m];
+      return {
+        metric: m,
+        label: m === "__other__" ? "Other" : metricLabel(m),
+        kinds: Object.keys(kmap).sort().map(function (k) {
+          return { kind: k, label: _kindLabel(k), figs: kmap[k].slice().sort(bandSort) };
+        }),
+      };
+    });
+  }
+  function renderNestedMetricFigures(nested) {
+    var html = '<div class="figure-groups">';
+    html += '<div class="fig-group-controls">' +
+      '<button type="button" class="fig-toggle-all" data-open="1">Expand all</button>' +
+      '<button type="button" class="fig-toggle-all" data-open="0">Collapse all</button></div>';
+    nested.forEach(function (mg, i) {
+      var open = i === 0 ? " open" : "";
+      var count = mg.kinds.reduce(function (n, k) { return n + k.figs.length; }, 0);
+      html += '<details class="fig-group"' + open + '>';
+      html += '<summary class="fig-group-summary">' + escapeHtml(mg.label) +
+        ' <span class="fig-group-count">' + count + '</span></summary>';
+      mg.kinds.forEach(function (k) {
+        html += '<div class="fig-subgroup-title">' + escapeHtml(k.label) +
+          ' <span class="fig-group-count">' + k.figs.length + '</span></div>';
+        html += renderFigureRows(k.figs);
+      });
+      html += '</details>';
+    });
+    html += "</div>";
+    return html;
+  }
   function bindFigureGroups(root) {
     (root || document).querySelectorAll(".fig-toggle-all").forEach(function (btn) {
       btn.addEventListener("click", function () {
@@ -1090,6 +1162,53 @@
   var CONTRAST_UPPER = { hd: "HD", icv: "ICV", iv: "IV", ld: "LD", wt: "WT", veh: "Veh" };
 
   function metricLabel(m) { return METRIC_LABELS[m] || formatName(m); }
+
+  /* ── Connectivity metric glossary ─────────────────────────────────────────
+     Definitions of the same-frequency functional-connectivity metrics, shown on
+     connectivity-family analysis pages. Sourced from CONNECTIVITY_METHODS.md
+     (source-analytics) — each carries its primary reference. */
+  var METRIC_DEFS = [
+    { key: "coherence", name: "Coherence (magnitude-squared)",
+      def: "Squared cross-spectrum normalized by both auto-spectra, |S<sub>xy</sub>|² / (S<sub>xx</sub>·S<sub>yy</sub>); range 0–1. Total linear coupling at a frequency — but maximally sensitive to zero-lag volume conduction.",
+      cite: "Carter 1987; classical" },
+    { key: "imag_coherence", name: "Imaginary coherence",
+      def: "Imaginary part of coherency, ℑ(S<sub>ij</sub>) / √(S<sub>ii</sub>·S<sub>jj</sub>). Volume-conduction coupling is purely real, so a non-zero imaginary part reflects genuine time-lagged interaction.",
+      cite: "Nolte et al. 2004" },
+    { key: "pli", name: "Phase Lag Index (PLI)",
+      def: "Consistency of the sign of the phase difference, |⟨sign(ℑ)⟩|; range 0–1. Ignores zero-lag (volume-conduction) coupling by construction.",
+      cite: "Stam et al. 2007" },
+    { key: "wpli", name: "Weighted PLI (wPLI)",
+      def: "PLI weighted by the magnitude of the imaginary cross-spectrum, |E{ℑ}| / E{|ℑ|}. Less sensitive to noise and to small perturbations near zero phase lag.",
+      cite: "Vinck et al. 2011, Eq. 8" },
+    { key: "dwpli", name: "Debiased weighted PLI² (dwPLI)",
+      def: "wPLI² with the sample-size bias removed (self-term diagonal excluded). May take small negative values where true connectivity is ~0 — expected, not an error.",
+      cite: "Vinck et al. 2011, Eqs. 31–32" },
+    { key: "dpli", name: "Directed PLI (dPLI)",
+      def: "Directional PLI: mean Heaviside of the phase difference; range 0–1. dPLI > 0.5 ⇒ region i phase-leads j; dPLI<sub>ij</sub>+dPLI<sub>ji</sub>=1.",
+      cite: "Stam & van Straaten 2012" },
+    { key: "aec", name: "Orthogonalized amplitude-envelope correlation (AEC)",
+      def: "Pearson correlation of band-power envelopes after pairwise orthogonalization removes the zero-lag shared signal (both directions averaged). Captures amplitude co-modulation of genuinely distinct sources.",
+      cite: "Hipp et al. 2012" },
+    { key: "partial_corr", name: "Partial correlation",
+      def: "Correlation between two regions with all others regressed out, from the (shrinkage-regularized) inverse covariance: −p<sub>ij</sub> / √(p<sub>ii</sub>·p<sub>jj</sub>). Separates direct from indirect connections.",
+      cite: "Marrelec et al. 2006" },
+  ];
+  // Analyses that use these same-frequency FC metrics (→ show the glossary).
+  function isConnectivityFamily(analysis) {
+    return /(_connectivity|_nbs|_graph|fcd_comparison)$/.test(analysis || "");
+  }
+  function renderMetricGlossary() {
+    var html = '<details class="metric-glossary">';
+    html += '<summary class="metric-glossary-summary">Connectivity metric definitions</summary>';
+    html += '<dl class="metric-glossary-list">';
+    METRIC_DEFS.forEach(function (m) {
+      html += '<dt>' + escapeHtml(m.name) + '</dt>';
+      html += '<dd>' + m.def +
+        ' <span class="metric-cite">' + escapeHtml(m.cite) + '</span></dd>';
+    });
+    html += '</dl></details>';
+    return html;
+  }
 
   function circosContrastLabel(name) {
     return name.split("_").map(function (t) {
