@@ -170,7 +170,8 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
 
     # 7. Render HTML
     _log("Rendering HTML...")
-    _render_html(out, manifest_json, title=config.title)
+    _render_html(out, manifest_json, title=config.title,
+                 home_link=config.home_link, home_label=config.home_label)
 
     # 8. Copy static assets
     _log("Copying static assets...")
@@ -228,7 +229,8 @@ def _merge_scan(target: ScanResult, source: ScanResult):
     target.qc_entries.extend(source.qc_entries)
 
 
-def _render_html(out: Path, manifest_json: str, title: str = "Source Analysis Gallery"):
+def _render_html(out: Path, manifest_json: str, title: str = "Source Analysis Gallery",
+                 home_link: str | None = None, home_label: str = "Overview"):
     """Render the index.html from the Jinja2 template."""
     template_dir = Path(__file__).parent / "templates"
     env = jinja2.Environment(
@@ -240,6 +242,8 @@ def _render_html(out: Path, manifest_json: str, title: str = "Source Analysis Ga
         manifest_json=manifest_json,
         title=title,
         build_ts=str(int(time.time())),
+        home_link=home_link,
+        home_label=home_label,
     )
     (out / "index.html").write_text(html, encoding="utf-8")
 

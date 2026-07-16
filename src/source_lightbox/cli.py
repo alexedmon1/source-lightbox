@@ -123,6 +123,12 @@ def main():
 @click.option("--exclude-analysis", "exclude_analyses", multiple=True,
               help="Analysis name to omit from the gallery (repeatable). Overrides "
                    "the study config's exclude_analyses / the built-in default.")
+@click.option("--home-link", default=None,
+              help="Relative URL to a splash/landing page, rendered as a 'back' link in "
+                   "the sidebar (e.g. ../index.html when this gallery is a view under a "
+                   "splash). Omit for a self-contained standalone build.")
+@click.option("--home-label", default="Home",
+              help="Text for the --home-link back link.")
 @click.option("--verbose/--quiet", default=True, help="Verbose output.")
 @click.option("--serve", "serve_after", is_flag=True, default=False,
               help="Serve the gallery locally after building (build + preview in one step).")
@@ -144,6 +150,8 @@ def build(
     brain_python,
     roi_categories,
     exclude_analyses,
+    home_link,
+    home_label,
     verbose,
     serve_after,
     port,
@@ -334,6 +342,8 @@ def build(
         contrast_pairs=contrast_pairs,
         circos_metrics=circos_metrics,
         paradigm_display=paradigm_display,
+        home_link=home_link,
+        home_label=home_label,
         # CLI flag > study-config `exclude_analyses:` > BuildConfig built-in default.
         **({"exclude_analyses": list(exclude_analyses)} if exclude_analyses
            else {"exclude_analyses": list(cfg_exclude)} if cfg_exclude is not None

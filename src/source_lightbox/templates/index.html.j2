@@ -11,6 +11,7 @@
 <body>
   <nav id="sidebar">
     <div class="sidebar-header">
+      {% if home_link %}<a class="home-link" href="{{ home_link }}">&larr; {{ home_label }}</a>{% endif %}
       <h1 id="gallery-title">Gallery</h1>
       <input type="search" id="search-input" placeholder="Search..." autocomplete="off">
     </div>

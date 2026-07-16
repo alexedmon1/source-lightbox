@@ -83,6 +83,21 @@ body {
   color: var(--text-primary);
 }
 
+.home-link {
+  display: inline-block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.home-link:hover {
+  color: var(--accent-color, var(--text-primary));
+  text-decoration: underline;
+}
+
 #search-input {
   width: 100%;
   padding: 6px 10px;

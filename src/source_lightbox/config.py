@@ -49,6 +49,12 @@ class BuildConfig:
     # its paradigms under a shared group header (e.g. resting/vertex -> "Resting"
     # with "ROI-based"/"Vertex-based" sub-labels). None = flat, formatName labels.
     paradigm_display: dict | None = None
+    # Optional "back" link rendered in the sidebar header — used when this gallery is
+    # one view under a splash/landing page (e.g. report/ + exploratory/ under a shared
+    # index.html). None = self-contained build, no link (so a handed-off standalone
+    # build never carries a dead ../index.html).
+    home_link: str | None = None
+    home_label: str = "Home"
     # Analyses to omit from the gallery entirely (figures, tables, summaries, nav).
     # Defaults to the combined network aliases, now superseded by the split
     # graph + nbs modules; a study can override via `exclude_analyses:` in its yaml.
