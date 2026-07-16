@@ -31,7 +31,7 @@ from .manifest import _read_csv  # noqa: E402
 from .scanner import FigureEntry, _slugify  # noqa: E402
 
 # Canonical Jonak-style band order; categories not in this list keep file order.
-BAND_ORDER = ["Delta", "Theta", "Alpha", "Beta", "Low Gamma", "High Gamma"]
+BAND_ORDER = ["Delta", "Theta", "Alpha", "Beta", "Low Gamma", "High Gamma", "Epsilon"]
 
 # Columns scanned, in precedence order, to decide significance of a row.
 # Corrected columns (q/FDR) precede raw p so a row is judged on the strictest
