@@ -978,6 +978,19 @@ main {
   font-size: 12px;
 }
 
+/* Secondary significance annotation (q/p): effect size + direction lead, so the
+   p-value is present but visually subordinate (R5 direction/magnitude-first). */
+.sig-q {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.g + .sig-q { margin-left: 3px; }
+
+/* The strongest single effect, promoted into the digest lead. */
+.sig-top { font-weight: 600; }
+.sig-top .g { color: var(--text-primary); }
+
 .sig-facet {
   color: var(--text-muted);
   font-style: italic;

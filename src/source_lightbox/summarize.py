@@ -775,6 +775,22 @@ def _arrow(v) -> str:
             else '<span class="arrow down">&#9660;</span>')
 
 
+def _fmt_q(rec: dict) -> str:
+    """Compact secondary significance annotation for a finding (R5: effect size +
+    direction lead, p/q shown but secondary). Prefers the corrected q_value, then
+    group_q, then the raw p_value; empty string when none is present."""
+    for col, sym in (("q_value", "q"), ("group_q", "q"), ("p_value", "p")):
+        v = _to_float(rec.get(col))
+        if v is None:
+            continue
+        if v < 0.001:
+            txt = f"{sym}&lt;.001"
+        else:
+            txt = f"{sym}={v:.3f}".replace("0.", ".", 1)
+        return f' <span class="sig-q">{txt}</span>'
+    return ""
+
+
 def _build_roi_posthoc_summary(table: dict, tables: list[dict], _label, groups: dict) -> str | None:
     """Digest parcellated spectral results at BOTH levels, per contrast × measure
     (band + dv): the whole-brain (region-averaged) effect AND the per-ROI/channel
@@ -814,6 +830,7 @@ def _build_roi_posthoc_summary(table: dict, tables: list[dict], _label, groups: 
     item_by_contrast: dict[str, str] = {}
     n_findings = 0
     sig_contrasts: set = set()
+    top = (0.0, "")  # (|g|, html) strongest single effect — leads the digest (R5)
     for contrast in all_contrasts:
         # Collect measures from either level for this contrast.
         meas: dict[str, dict] = {}
@@ -839,7 +856,7 @@ def _build_roi_posthoc_summary(table: dict, tables: list[dict], _label, groups: 
             if m["global"] is not None:
                 gv = _to_float(m["global"].get("effect_size")) or 0.0
                 global_html = (f' <span class="sig-facet">whole-brain</span> {_arrow(gv)}'
-                               f'<span class="g">g={abs(gv):.2f}</span>')
+                               f'<span class="g">g={abs(gv):.2f}</span>{_fmt_q(m["global"])}')
                 n_findings += 1
             rs = sorted(m["rois"], key=lambda x: -abs(_to_float(x.get("effect_size")) or 0.0))
             count_html = region_html = ""
@@ -848,13 +865,23 @@ def _build_roi_posthoc_summary(table: dict, tables: list[dict], _label, groups: 
                 for r in rs[:NAME_CAP]:
                     v = _to_float(r.get("effect_size")) or 0.0
                     named.append(f'{_arrow(v)}&nbsp;{escape(str(r.get(elem)))} '
-                                 f'<span class="g">g={abs(v):.2f}</span>')
+                                 f'<span class="g">g={abs(v):.2f}</span>{_fmt_q(r)}')
                 more = len(rs) - len(named)
                 tail = f" (+{more} more)" if more > 0 else ""
                 count_html = (f' <span class="sig-pairs">{len(rs)} {unit_word}'
                               f'{"s" if len(rs) != 1 else ""}</span>')
                 region_html = f'<span class="sig-region">{", ".join(named)}{tail}</span>'
                 n_findings += len(rs)
+            # Track the strongest single effect (whole-brain or per-unit) so the
+            # digest can LEAD with direction + magnitude (R5), not a bare count.
+            for rec, unit in (([(m["global"], "whole-brain")] if m["global"] is not None else [])
+                              + ([(rs[0], str(rs[0].get(elem)))] if rs else [])):
+                sv = _to_float(rec.get("effect_size")) or 0.0
+                if abs(sv) > top[0]:
+                    top = (abs(sv),
+                           f'<span class="sig-contrast">{escape(str(_label(contrast)))}</span> '
+                           f'<strong>{escape(measure)}</strong> {escape(unit)} {_arrow(sv)}'
+                           f'<span class="g">g={abs(sv):.2f}</span>{_fmt_q(rec)}')
             # Every measure is its own block row — so a whole-brain-only contrast
             # (rescue/exploratory, no surviving per-ROI unit) lines up the same as
             # a per-ROI one instead of cramming onto a single line.
@@ -868,13 +895,15 @@ def _build_roi_posthoc_summary(table: dict, tables: list[dict], _label, groups: 
     _fill_nulls(all_contrasts, item_by_contrast, _label, "No significant effects")
     body = _render_body(all_contrasts, item_by_contrast, groups)
     html = '<div class="sig-summary">'
+    lead_effect = f'<span class="sig-top">Strongest: {top[1]}.</span> ' if top[1] else ""
     html += (
-        f'<p class="sig-lead">{n_findings} significant {unit_word}-level effect'
-        f'{"s" if n_findings != 1 else ""} across {len(sig_contrasts)} of '
-        f"{len(all_contrasts)} comparisons (FDR q &lt; 0.05)."
-        ' <span class="sig-key">whole-brain effect + the '
-        f'{unit_word}s that differ; &#9650;/&#9660; = the first-listed group is '
-        'higher/lower</span>.</p>'
+        f'<p class="sig-lead">{lead_effect}'
+        f'{n_findings} {unit_word}-level effect'
+        f'{"s" if n_findings != 1 else ""} reach FDR q &lt; 0.05 across '
+        f'{len(sig_contrasts)} of {len(all_contrasts)} comparisons.'
+        ' <span class="sig-key">effect size (Hedges g) + direction lead, q secondary; '
+        f'whole-brain effect + the {unit_word}s that differ; '
+        '&#9650;/&#9660; = the first-listed group is higher/lower</span>.</p>'
     )
     html += body
     html += "</div>"
