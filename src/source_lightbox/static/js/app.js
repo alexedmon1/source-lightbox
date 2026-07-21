@@ -462,12 +462,16 @@
       if (figs[0].filename.indexOf("circos__") === 0) {
         figPanel = renderCircosFigures(figs);
       } else {
-        // Connectivity-matrix modules: metric (AEC, …) first, then figure type.
-        var nested = figs.length > 8 ? chooseNestedConnectivityGrouping(figs, _contrastVocab()) : null;
+        // Two-level layouts, tried in order: connectivity metric-first, then
+        // power/spectral measure-first (Absolute / Relative / Delta-referenced →
+        // figure type). Fall back to single-axis groups, then flat rows.
+        var vocab = _contrastVocab();
+        var nested = figs.length > 8 ? chooseNestedConnectivityGrouping(figs, vocab) : null;
+        if (!nested && figs.length > 8) nested = chooseMeasureFirstGrouping(figs, vocab);
         if (nested) {
           figPanel = renderNestedMetricFigures(nested);
         } else {
-          var groups = figs.length > 8 ? chooseFigureGrouping(figs, _contrastVocab()) : null;
+          var groups = figs.length > 8 ? chooseFigureGrouping(figs, vocab) : null;
           figPanel = groups ? renderGroupedFigures(groups) : renderFigureRows(figs);
         }
       }
@@ -880,12 +884,19 @@
   // end of the title. Bands come from BAND_ORDER (defined below; available at
   // call time).
   function _figureFacet(name) {
+    // Prefer the band as the lead facet, but mask "Delta Ref" (delta-referenced
+    // power) first so it can't false-match the "Delta" band; fall back to a
+    // Delta-ref facet only when the figure carries no band (e.g. psd_by_region).
+    var dref = /(^|\s)delta\s*ref(\s|$)/i;
+    var hasDref = dref.test(name);
+    var probe = hasDref ? name.replace(dref, "   ") : name;
     var measures = ["Exponent", "Offset", "Relative", "Absolute"];
     var facets = BAND_ORDER.concat(measures);  // bands first — prefer the band
     for (var i = 0; i < facets.length; i++) {
       var re = new RegExp("(^|\\s)" + facets[i].replace(/ /g, "\\s") + "(\\s|$)", "i");
-      if (re.test(name)) return { facet: facets[i], re: re };
+      if (re.test(probe)) return { facet: facets[i], re: re };
     }
+    if (hasDref) return { facet: "Delta-ref", re: dref };
     return null;
   }
 
@@ -930,7 +941,7 @@
     // ("High Gamma") use spaces, source-space maps ("high_gamma") use underscores.
     band: ["low_gamma", "high_gamma", "low gamma", "high gamma", "peak_alpha",
            "spectral_slope", "delta", "theta", "alpha", "beta", "gamma", "epsilon"],
-    power: ["absolute", "relative"],
+    power: ["delta_ref", "absolute", "relative"],
     flow: ["inflow", "outflow", "netflow"],
     measure: ["summary", "exponent", "offset"],
     group_name: ["ko_ld_iv_icv", "ko_hd_icv", "ko_hd_iv", "ko_veh", "wt_veh"],
@@ -1097,6 +1108,58 @@
       return {
         metric: m,
         label: m === "__other__" ? "Other" : metricLabel(m),
+        kinds: Object.keys(kmap).sort().map(function (k) {
+          return { kind: k, label: _kindLabel(k), figs: kmap[k].slice().sort(bandSort) };
+        }),
+      };
+    });
+  }
+  // Power / spectral modules (roi_psd, electrode_psd, aperiodic): organize figures
+  // by MEASURE first (Absolute / Relative / Delta-referenced power; aperiodic
+  // Exponent / Offset), then by figure type (Band power / PSD by region /
+  // Effect-size mosaic / Significance heatmap …), then band. Same two-level shape
+  // as the connectivity grouping, reusing renderNestedMetricFigures. Returns
+  // [{metric,label,kinds:[{kind,label,figs}]}] or null when not measure-shaped.
+  var MEASURE_ORDER = ["absolute", "relative", "delta_ref", "exponent", "offset"];
+  var MEASURE_LABELS = {
+    absolute: "Absolute power", relative: "Relative power",
+    delta_ref: "Delta-referenced power",
+    exponent: "Aperiodic exponent", offset: "Aperiodic offset",
+  };
+  function measureLabel(m) { return MEASURE_LABELS[m] || formatName(m); }
+  function chooseMeasureFirstGrouping(figs, contrasts) {
+    var vocab = GROUP_VOCAB.power.concat(GROUP_VOCAB.measure);
+    function measureOf(b) { return _axisValue(b, vocab); }
+    if (figs.filter(function (f) { return measureOf(_figBase(f)); }).length < 0.5 * figs.length)
+      return null;                                     // not a measure-keyed set
+    var byM = {}, morder = [], kinds = {};
+    figs.forEach(function (f) {
+      var base = _figBase(f);
+      var m = measureOf(base) || "__other__";
+      var kind = _figKind(base, contrasts) || "figures";
+      kinds[kind] = true;
+      if (!byM[m]) { byM[m] = {}; morder.push(m); }
+      (byM[m][kind] = byM[m][kind] || []).push(f);
+    });
+    var distinct = morder.filter(function (m) { return m !== "__other__"; }).length;
+    if (distinct < 2 || Object.keys(kinds).length < 2) return null;
+    morder.sort(function (a, b) {
+      if (a === "__other__") return 1;
+      if (b === "__other__") return -1;
+      var ia = MEASURE_ORDER.indexOf(a), ib = MEASURE_ORDER.indexOf(b);
+      if (ia === -1) ia = 99;
+      if (ib === -1) ib = 99;
+      return ia - ib || a.localeCompare(b);
+    });
+    function bandSort(a, b) {
+      var ba = _figBase(a), bb = _figBase(b);
+      return (_bandOrderKey(ba) - _bandOrderKey(bb)) || ba.localeCompare(bb);
+    }
+    return morder.map(function (m) {
+      var kmap = byM[m];
+      return {
+        metric: m,
+        label: m === "__other__" ? "Other" : measureLabel(m),
         kinds: Object.keys(kmap).sort().map(function (k) {
           return { kind: k, label: _kindLabel(k), figs: kmap[k].slice().sort(bandSort) };
         }),

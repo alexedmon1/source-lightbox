@@ -830,7 +830,14 @@ def _build_roi_posthoc_summary(table: dict, tables: list[dict], _label, groups: 
     item_by_contrast: dict[str, str] = {}
     n_findings = 0
     sig_contrasts: set = set()
-    top = (0.0, "")  # (|g|, html) strongest single effect — leads the digest (R5)
+    # The digest leads with the strongest single effect (R5). Prefer the absolute
+    # DV: normalized DVs (relative/delta_ref) can surface large redistribution
+    # artifacts that misrepresent the finding, while absolute power is the honest
+    # primary read. Lead with the strongest significant absolute effect; only fall
+    # back to the global max across all DVs when no absolute effect survives.
+    LEAD_DV = "absolute"
+    top = (0.0, "")       # (|g|, html) global max across all DVs — fallback lead
+    top_pref = (0.0, "")  # (|g|, html) strongest preferred-DV effect — leads if any
     for contrast in all_contrasts:
         # Collect measures from either level for this contrast.
         meas: dict[str, dict] = {}
@@ -877,11 +884,14 @@ def _build_roi_posthoc_summary(table: dict, tables: list[dict], _label, groups: 
             for rec, unit in (([(m["global"], "whole-brain")] if m["global"] is not None else [])
                               + ([(rs[0], str(rs[0].get(elem)))] if rs else [])):
                 sv = _to_float(rec.get("effect_size")) or 0.0
+                frag = (f'<span class="sig-contrast">{escape(str(_label(contrast)))}</span> '
+                        f'<strong>{escape(measure)}</strong> {escape(unit)} {_arrow(sv)}'
+                        f'<span class="g">g={abs(sv):.2f}</span>{_fmt_q(rec)}')
                 if abs(sv) > top[0]:
-                    top = (abs(sv),
-                           f'<span class="sig-contrast">{escape(str(_label(contrast)))}</span> '
-                           f'<strong>{escape(measure)}</strong> {escape(unit)} {_arrow(sv)}'
-                           f'<span class="g">g={abs(sv):.2f}</span>{_fmt_q(rec)}')
+                    top = (abs(sv), frag)
+                if (str(rec.get("dv") or "").strip().lower() == LEAD_DV
+                        and abs(sv) > top_pref[0]):
+                    top_pref = (abs(sv), frag)
             # Every measure is its own block row — so a whole-brain-only contrast
             # (rescue/exploratory, no surviving per-ROI unit) lines up the same as
             # a per-ROI one instead of cramming onto a single line.
@@ -895,7 +905,8 @@ def _build_roi_posthoc_summary(table: dict, tables: list[dict], _label, groups: 
     _fill_nulls(all_contrasts, item_by_contrast, _label, "No significant effects")
     body = _render_body(all_contrasts, item_by_contrast, groups)
     html = '<div class="sig-summary">'
-    lead_effect = f'<span class="sig-top">Strongest: {top[1]}.</span> ' if top[1] else ""
+    lead_src = top_pref if top_pref[1] else top  # prefer absolute DV; fall back to global max
+    lead_effect = f'<span class="sig-top">Strongest: {lead_src[1]}.</span> ' if lead_src[1] else ""
     html += (
         f'<p class="sig-lead">{lead_effect}'
         f'{n_findings} {unit_word}-level effect'
