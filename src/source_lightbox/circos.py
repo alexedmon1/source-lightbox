@@ -3,6 +3,10 @@
 Same pattern as :mod:`brain_mosaic`: shell out to the source-analytics venv
 (which has ``connectivity_plots`` + the Allen atlas) so source-lightbox stays
 lightweight. Optional — if the interpreter isn't found, callers skip circos.
+
+The chords are gated on the NBS subnetworks in ``<module>_subnetwork_edges.csv``
+(written by source-analytics next to ``<module>_hypotheses.csv``); the retired
+``*_posthoc_region_pair`` tables are no longer required.
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ _DEFAULT_PY = Path.home() / "sandbox" / "source-analytics" / ".venv" / "bin" / "
 
 
 def _resolve(python_path):
-    return Path(python_path) if python_path else _DEFAULT_PY
+    return Path(python_path).expanduser() if python_path else _DEFAULT_PY
 
 
 def circos_available(python_path=None) -> bool:
@@ -30,22 +34,22 @@ def circos_available(python_path=None) -> bool:
     return probe.returncode == 0
 
 
-def render_circos(edges_csv, posthoc_csv, out_dir, contrasts, *,
-                  global_csv=None, metrics=None, labels=None, alpha=0.05,
+def render_circos(edges_csv, subnetwork_csv, out_dir, contrasts, *,
+                  metrics=None, labels=None, alpha=0.05,
                   python_path=None, log=lambda *a, **k: None):
-    """Render significance circos for each metric × significant (contrast, band).
+    """Render one significance circos per metric × hypothesis × band that has an
+    FDR-significant NBS subnetwork.
 
-    When ``global_csv`` (the omnibus connectivity table) is given, circos are
-    gated on global significance — region-pair post-hocs are only shown where the
-    global test is significant.
+    ``subnetwork_csv`` is the module's ``*_subnetwork_edges.csv`` (per-edge
+    membership of each NBS component); ``edges_csv`` is the roi_connectivity
+    per-subject edge table the group-mean chords are averaged from.
 
     Returns the list of written PNG paths (empty on any failure — never raises).
     """
     py = _resolve(python_path)
     payload = {
         "edges_csv": str(edges_csv),
-        "posthoc_csv": str(posthoc_csv),
-        "global_csv": str(global_csv) if global_csv else None,
+        "subnetwork_csv": str(subnetwork_csv),
         "out_dir": str(out_dir),
         "contrasts": contrasts,
         "metrics": metrics or ["imag_coherence"],
@@ -59,6 +63,8 @@ def render_circos(edges_csv, posthoc_csv, out_dir, contrasts, *,
     if proc.returncode != 0:
         log(f"  WARNING: circos render failed: {proc.stderr.strip()[-300:]}")
         return []
+    if proc.stderr.strip():
+        log(f"  circos: {proc.stderr.strip()[-300:]}")
     last = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
     try:
         return [Path(p) for p in json.loads(last)]

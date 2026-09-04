@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from source_lightbox.scanner import (
-    AnalyticsScanner,
     LocalizationScanner,
     ResultsScanner,
     _slugify,
@@ -57,20 +56,6 @@ def tmp_results(tmp_path):
     return tmp_path
 
 
-@pytest.fixture
-def tmp_analytics(tmp_path):
-    """Create a mock analytics directory structure."""
-    summary_dir = tmp_path / "resting" / "roi_psd"
-    summary_dir.mkdir(parents=True)
-    (summary_dir / "ANALYSIS_SUMMARY.md").write_text("# PSD Analysis\nDone.")
-
-    summary_dir2 = tmp_path / "chirp" / "roi_evoked"
-    summary_dir2.mkdir(parents=True)
-    (summary_dir2 / "ANALYSIS_SUMMARY.md").write_text("# Chirp Evoked\nDone.")
-
-    return tmp_path
-
-
 def test_slugify():
     assert _slugify("Allen ROI") == "allen_roi"
     assert _slugify("Hello World!") == "hello_world"
@@ -106,14 +91,20 @@ def test_results_scanner(tmp_results):
     assert result.tables[0].filename == "roi_psd_omnibus.csv"
 
 
-def test_analytics_scanner(tmp_analytics):
-    scanner = AnalyticsScanner(tmp_analytics)
-    result = scanner.scan()
-
-    assert len(result.summaries) == 2
-    paradigms = {s.paradigm for s in result.summaries}
-    assert "resting" in paradigms
-    assert "chirp" in paradigms
+def test_results_scanner_recurses_and_accepts_jpeg(tmp_path):
+    """source-analytics may nest figures (e.g. per-metric subfolders) and write
+    JPEG/WebP as well as PNG; nested paths are flattened into the filename."""
+    base = tmp_path / "figures" / "resting" / "roi_connectivity"
+    (base / "circos").mkdir(parents=True)
+    (base / "circos" / "theta.png").write_bytes(b"PNG")
+    (base / "matrix.jpg").write_bytes(b"JPG")
+    (base / "notes.txt").write_text("skip me")
+    result = ResultsScanner(tmp_path, "Allen ROI").scan()
+    names = sorted(f.filename for f in result.figures)
+    assert names == ["circos__theta.png", "matrix.jpg"]
+    jpg = next(f for f in result.figures if f.filename == "matrix.jpg")
+    assert jpg.thumb_rel_path.endswith("/matrix.jpg") and jpg.thumb_rel_path.startswith("thumbs/")
+    assert jpg.thumb_rel_path.count(".jpg") == 1
 
 
 def test_figure_entry_paths(tmp_results):

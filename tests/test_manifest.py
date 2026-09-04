@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from source_lightbox.manifest import build_manifest
-from source_lightbox.scanner import FigureEntry, ScanResult, SummaryEntry, TableEntry
+from source_lightbox.scanner import FigureEntry, ScanResult, TableEntry
 
 
 @pytest.fixture
@@ -20,15 +20,7 @@ def tmp_csv(tmp_path):
     return csv
 
 
-@pytest.fixture
-def tmp_summary(tmp_path):
-    """Create a temporary ANALYSIS_SUMMARY.md file."""
-    md = tmp_path / "ANALYSIS_SUMMARY.md"
-    md.write_text("# PSD Analysis\nResults are **significant**.\n")
-    return md
-
-
-def test_build_manifest_basic(tmp_csv, tmp_summary):
+def test_build_manifest_basic(tmp_csv):
     scan = ScanResult()
     scan.figures.append(
         FigureEntry(
@@ -49,14 +41,6 @@ def test_build_manifest_basic(tmp_csv, tmp_summary):
             filename="psd_posthoc_global.csv",
         )
     )
-    scan.summaries.append(
-        SummaryEntry(
-            src_path=tmp_summary,
-            paradigm="resting",
-            analysis="psd",
-        )
-    )
-
     manifest = build_manifest(scan, "Test Gallery")
 
     assert manifest["title"] == "Test Gallery"
@@ -75,6 +59,8 @@ def test_build_manifest_basic(tmp_csv, tmp_summary):
     # Tables are now inline with headers + rows
     tbl = psd["tables"]["Allen ROI"][0]
     assert tbl["filename"] == "psd_posthoc_global.csv"
+    # full CSV copied to the gallery for download (inline copy is row-capped)
+    assert tbl["csv"] == "tables/resting/psd/psd_posthoc_global.csv"
     assert tbl["headers"] == ["contrast", "band", "hedges_g", "significant"]
     assert len(tbl["rows"]) == 2
     assert tbl["rows"][0] == ["disease_effect", "Low Gamma", "1.20", "TRUE"]
@@ -121,3 +107,20 @@ def test_build_manifest_empty():
     manifest = build_manifest(scan, "Empty")
     assert manifest["stats"]["total_figures"] == 0
     assert manifest["stats"]["paradigm_count"] == 0
+
+
+def test_manifest_carries_group_display_and_role_badges(tmp_csv):
+    scan = ScanResult()
+    scan.tables.append(TableEntry(src_path=tmp_csv, source_label="ROI", paradigm="resting",
+                                  analysis="psd", filename="psd_posthoc_global.csv"))
+    manifest = build_manifest(
+        scan, "G",
+        contrast_labels={"disease_effect": "KO vs WT"},
+        contrast_meta={"disease_effect": {"role": "confirmatory", "test": "difference",
+                                          "gate_on": []}},
+        group_labels={"WT_VEH": "WT Vehicle"}, group_order=["WT_VEH", "KO_VEH"],
+    )
+    assert manifest["group_labels"] == {"WT_VEH": "WT Vehicle"}
+    assert manifest["group_order"] == ["WT_VEH", "KO_VEH"]
+    digest = manifest["paradigms"]["resting"]["psd"]["summary"]
+    assert '<span class="sig-contrast">KO vs WT</span><span class="sig-role sig-role-confirmatory">' in digest

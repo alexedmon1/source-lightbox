@@ -24,7 +24,8 @@ def compute_subject_meta(qc_metrics, subject_keys, threshold: float = _THRESHOLD
 
     Args:
         qc_metrics: list of QC row dicts (numeric ``subject_id``, ``group``, metrics).
-        subject_keys: localization subject keys like ``"sub-933"``.
+        subject_keys: localization subject keys like ``"sub-933"`` or
+            ``"sub-933_ses-01"`` (the source-localization ``output_id``).
         threshold: z-score cutoff (default 2.0).
     """
     meta = {key: {"group": None, "outliers": []} for key in subject_keys}
@@ -51,7 +52,28 @@ def compute_subject_meta(qc_metrics, subject_keys, threshold: float = _THRESHOLD
                 by_id[sid]["outliers"].append(col)
 
     for key in subject_keys:
-        nid = key[4:] if key.startswith("sub-") else key
-        if nid in by_id:
-            meta[key] = by_id[nid]
+        sid = _qc_subject_id(key, by_id)
+        if sid is not None:
+            meta[key] = by_id[sid]
     return meta
+
+
+def _qc_subject_id(key: str, by_id: dict) -> str | None:
+    """Map a localization folder key to the QC row's ``subject_id``.
+
+    Folders are named by ``output_id`` — ``sub-<id>`` plus optional
+    ``_ses-<session>`` / ``_rec-<recording>`` suffixes — while the QC CSV
+    carries the bare ``subject_id``. Try the most specific form first so a
+    QC table keyed by the full output id still matches.
+    """
+    candidates = [key]
+    bare = key[4:] if key.startswith("sub-") else key
+    candidates.append(bare)
+    for marker in ("_ses-", "_rec-"):
+        if marker in bare:
+            bare = bare.split(marker, 1)[0]
+            candidates.append(bare)
+    for c in candidates:
+        if c in by_id:
+            return c
+    return None

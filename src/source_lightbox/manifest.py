@@ -27,11 +27,17 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
                    contrast_groups: dict | None = None,
                    contrast_meta: dict | None = None,
                    analysis_meta: dict | None = None,
-                   paradigm_display: dict | None = None) -> dict:
+                   paradigm_display: dict | None = None,
+                   group_labels: dict | None = None,
+                   group_order: list | None = None) -> dict:
     """Build the manifest dictionary from aggregated scan results.
 
-    Tables are embedded as parsed CSV data and summaries as rendered HTML,
-    so the gallery works without a server (no fetch() needed).
+    Tables are embedded as parsed CSV data (row-capped; the full CSV is copied
+    to ``tables/`` and linked) and summaries as generated HTML digests, so the
+    gallery works without a server (no fetch() needed).
+
+    ``group_labels`` / ``group_order`` (from the study YAML) drive how treatment
+    groups are named and ordered in the UI.
 
     ``analysis_meta`` (read from source-analytics) attaches a ``meta`` block —
     ``domain`` and ``supplements`` — to each analysis so the gallery can group
@@ -39,8 +45,8 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
 
     ``contrast_meta`` (read from the study YAML) carries each contrast's
     hypothesis-testing metadata — ``role``, ``test``, ``gate_on`` — keyed by
-    contrast name. Phase 0 only passes it through to the manifest; the
-    rescue-map presentation (Phase 2) consumes it.
+    contrast name. The digest badges each contrast with its role
+    (confirmatory / exploratory) and notes what a gated contrast depends on.
     """
     analysis_meta = analysis_meta or {}
     manifest = {
@@ -53,6 +59,9 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
         # Per-contrast readable labels: name -> label. Also serves as the
         # contrast vocabulary the frontend uses to group figures by contrast.
         "contrast_labels": contrast_labels or {},
+        # Treatment-group display names + order (study YAML groups: / group_order:).
+        "group_labels": group_labels or {},
+        "group_order": list(group_order or []),
         "localization": {},
         "sources": [],
     }
@@ -117,6 +126,7 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
         truncated = total_rows > max_table_rows
         tbl_entry = {
             "filename": tbl.filename,
+            "csv": tbl.gallery_rel_path,
             "headers": table_data["headers"],
             "rows": table_data["rows"][:max_table_rows] if truncated else table_data["rows"],
         }
@@ -152,6 +162,7 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
                 module_tables = [t for src in entry["tables"].values() for t in src]
             summary_html = build_significance_summary(
                 module_tables, contrast_labels=contrast_labels, contrast_groups=contrast_groups,
+                contrast_meta=contrast_meta,
                 region_pair_table=region_pair_full.get((paradigm, analysis)))
             # Descriptive-only matrix modules (e.g. roi_connectivity, whose
             # per-edge stats were retired) have no stat tables → no significance

@@ -45,20 +45,31 @@ convention. The lightbox renders figures at build time:
   primary `power_type` (default `relative`). FORGE roi_psd → 5 mosaics (was 120+).
 - Contrast **labels** come from `contrasts[].label` in the YAML (required, no
   auto-prettify) and apply everywhere: digest, heatmap axes, mosaic titles.
-- **Connectivity circos** for modules with a `*_posthoc_region_pair` table:
-  significance chord diagrams (32 ROIs grouped/colored by their 10 anatomical
-  regions, Yeo-style) showing the group difference — direction + magnitude — with
-  FDR-significant region pairs opaque. Delegated to source-analytics
+- **Connectivity circos** for NBS modules (`roi_nbs`) that carry a
+  `*_subnetwork_edges.csv` table — the per-edge membership of every NBS
+  component that source-analytics writes next to `roi_nbs_hypotheses.csv`
+  (roi_connectivity's per-edge posthoc tables were retired 2026-06-25, so the
+  old `*_posthoc_region_pair` trigger never fired on a fresh run). Significance
+  chord diagrams (32 ROIs grouped/colored by their 10 anatomical regions,
+  Yeo-style) show the group difference — direction + magnitude — with the edges
+  of each FDR-significant subnetwork opaque. Delegated to source-analytics
   (`viz.connectivity_plots`) via a subprocess (`circos.py` +
-  `_circos_render_worker.py`), reading the edge CSV from the analytics dir + the
-  region-pair posthoc table. Rendered for each metric in `circos_metrics` (YAML
-  list; default imag_coherence) × significant `(contrast, band)`. Shown in the
-  gallery as **metric sub-tabs → band rows → small click-to-enlarge thumbnails**
-  (filenames `circos__<metric>__<band>__<contrast>.png` so the JS groups them).
-  The worker picks the atlas `roi_categories.yaml` whose ROI names match the edges
-  (the atlas ships several granularities; only the 32-ROI one matches). Needs
-  `contrast_pairs` (name + group_a/group_b) from the study config. Region names
-  render as a staggered tangential ring between the ROI nodes and ROI labels.
+  `_circos_render_worker.py`), reading the per-subject edge CSV from the analytics
+  working tree (`<paradigm>/roi_connectivity/data/roi_connectivity_edges.csv`)
+  for the chords. Rendered for each metric in `circos_metrics` (YAML list;
+  default imag_coherence) × contrast × band with a significant subnetwork, and
+  shown alongside (not instead of) the NBS component heatmap. In the gallery:
+  **metric sub-tabs → band rows → small click-to-enlarge thumbnails**
+  (filenames `circos__<metric>__<band>__<contrast>.png` so the JS groups them;
+  captions use `contrast_labels`). The worker picks the atlas `roi_categories.yaml`
+  whose ROI names match the edges (the atlas ships several granularities; only
+  the 32-ROI one matches). Needs `contrast_pairs` (name + group_a/group_b) from
+  the study config (`contrasts:` or `hypotheses:` ±1 weights).
+- Both workers read the **native hypothesis schema** (`hypothesis`, `spatial`,
+  `dv`, `effect_size`, `stat`, `q_value`); source-analytics dropped the legacy
+  alias columns on 2026-07-06, and the workers map any remaining aliases to the
+  native names before filtering. The mosaic worker facets aperiodic tables on
+  `dv` when `band` is the `NA` placeholder.
 
 ## Summaries: generated digest, not the verbatim report
 

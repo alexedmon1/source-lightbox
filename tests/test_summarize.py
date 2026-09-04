@@ -323,3 +323,59 @@ def test_electrode_posthoc_says_channels():
     assert html is not None
     assert "channel-level effect" in html and "3 channels" in html
     assert "Fp1" in html and "ROI" not in html
+
+
+# --------------------------------------------------------------------------- #
+# Native hypothesis schema (post alias-drop, source-analytics 2026-07-06):
+# roi_posthoc, comparison, and NBS digests must dispatch on native columns.
+# --------------------------------------------------------------------------- #
+def test_native_roi_posthoc_digest_names_rois():
+    glob = _tbl("roi_psd_posthoc_global.csv",
+                "hypothesis,band,dv,effect_size,q_value,significant",
+                ["disease_effect,Theta,relative,0.9,0.01,TRUE"])
+    roi = _tbl("roi_psd_posthoc_roi.csv",
+               "hypothesis,band,spatial,dv,effect_size,q_value,significant",
+               ["disease_effect,Theta,Motor_L,relative,1.1,0.01,TRUE",
+                "disease_effect,Theta,Motor_R,relative,0.8,0.02,TRUE",
+                "disease_effect,Theta,Visual_L,relative,0.1,0.60,FALSE",
+                "disease_effect,Alpha,Motor_L,relative,0.2,0.50,FALSE"])
+    html = build_significance_summary([glob, roi], contrast_labels={"disease_effect": "KO vs WT"})
+    assert html is not None and "KO vs WT" in html
+    assert "Motor_L" in html and "Motor_R" in html and "Visual_L" not in html
+
+
+def test_native_comparison_digest():
+    tbl = _tbl("electrode_comparison_results.csv",
+               "hypothesis,band,dv,correlation_r,source_hedges_g,electrode_hedges_g,"
+               "source_significant,electrode_significant",
+               ["disease_effect,Theta,relative,0.72,1.2,0.9,TRUE,TRUE",
+                "disease_effect,Alpha,relative,0.10,0.1,0.2,FALSE,FALSE"])
+    html = build_significance_summary([tbl])
+    assert html is not None and "disease_effect" in html
+
+
+def test_native_nbs_digest_from_hypotheses_and_results():
+    res = _tbl("roi_nbs_results.csv", "key,component,n_edges,p_corrected",
+               ["disease_effect_Theta_imag_coherence,1,12,0.004",
+                "disease_effect_Alpha_imag_coherence,1,2,0.40"])
+    hyp = _tbl("roi_nbs_hypotheses.csv",
+               "hypothesis,kind,role,band,dv,component_id,n_edges,component_p,significant,stat_type",
+               ["disease_effect,contrast,confirmatory,Theta,imag_coherence,1,12,0.004,True,t",
+                "disease_effect,contrast,confirmatory,Alpha,imag_coherence,1,2,0.40,False,t"])
+    edges = _tbl("roi_nbs_subnetwork_edges.csv",
+                 "hypothesis,band,dv,component_id,component_p,significant,node_i,node_j,roi_i,roi_j,stat",
+                 ["disease_effect,Theta,imag_coherence,1,0.004,True,0,1,Motor_L,Motor_R,3.2"])
+    html = build_significance_summary([res, hyp, edges])
+    assert html is not None and "disease_effect" in html and "Theta" in html
+
+
+def test_role_badge_and_gate_note():
+    tbl = _tbl("x_global.csv", "hypothesis,band,effect_size,significant",
+               ["disease_effect,Theta,0.9,TRUE", "hd_icv_rescue,Theta,-0.7,TRUE"])
+    html = build_significance_summary(
+        [tbl], contrast_labels={"disease_effect": "KO vs WT", "hd_icv_rescue": "HD-ICV rescue"},
+        contrast_meta={"disease_effect": {"role": "confirmatory", "gate_on": []},
+                       "hd_icv_rescue": {"role": "exploratory", "gate_on": ["disease_effect"]}})
+    assert 'sig-role-confirmatory">confirmatory</span>' in html
+    assert 'sig-role-exploratory">exploratory</span>' in html
+    assert "gated on KO vs WT" in html

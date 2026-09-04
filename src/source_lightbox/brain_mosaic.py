@@ -24,7 +24,7 @@ _DEFAULT_PY = Path.home() / "sandbox" / "source-analytics" / ".venv" / "bin" / "
 
 
 def resolve_python(python_path: str | Path | None) -> Path:
-    return Path(python_path) if python_path else _DEFAULT_PY
+    return Path(python_path).expanduser() if python_path else _DEFAULT_PY
 
 
 def brain_available(python_path: str | Path | None = None) -> bool:
@@ -42,7 +42,7 @@ def brain_available(python_path: str | Path | None = None) -> bool:
 def render_roi_mosaics(
     table_path: str | Path,
     *,
-    categories: str | Path,
+    categories: str | Path | None,
     out_dir: str | Path,
     analysis_name: str,
     contrasts: list[str] | None = None,
@@ -54,12 +54,15 @@ def render_roi_mosaics(
 ) -> list[Path]:
     """Render brain mosaics for one ROI posthoc table via source-analytics.
 
+    ``categories`` may be None: the worker then auto-picks the bundled atlas
+    ``roi_categories.yaml`` whose ROI names match the table (as circos does).
+
     Returns the list of written PNG paths (empty on any failure — never raises).
     """
     py = resolve_python(python_path)
     payload = {
         "csv": str(table_path),
-        "categories": str(categories),
+        "categories": str(categories) if categories else None,
         "out_dir": str(out_dir),
         "analysis_name": analysis_name,
         "contrasts": contrasts,
@@ -76,6 +79,8 @@ def render_roi_mosaics(
         log(f"  WARNING: brain mosaic render failed [{analysis_name}]: "
             f"{proc.stderr.strip()[-300:]}")
         return []
+    if proc.stderr.strip():
+        log(f"  brain mosaic [{analysis_name}]: {proc.stderr.strip()[-300:]}")
     last = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
     try:
         return [Path(p) for p in json.loads(last)]

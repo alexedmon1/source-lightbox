@@ -273,3 +273,96 @@ def test_render_distinct_modules(tmp_path):
     figures = render_table_figures(tables, tmp_path / ".rendered", dpi=72)
     assert {f.analysis for f in figures} == {"roi_psd", "roi_connectivity"}
     assert len(figures) == 2  # one per module
+
+
+# --------------------------------------------------------------------------- #
+# Graph-metric heatmap dual-reads the native nodal hypotheses table, and the
+# module renders only one graph-metric figure set even when both the native
+# hypotheses table and the legacy *_stats.csv are present.
+# --------------------------------------------------------------------------- #
+def test_graph_metric_matches_native_and_legacy():
+    from source_lightbox.render import RoiGraphMetricHeatmap
+
+    native = "hypothesis,band,spatial,conn_metric,graph_metric,stat,effect_size,q_value,significant"
+    legacy = "contrast,band,conn_metric,graph_metric,roi,t,p,p_fdr"
+    assert select_renderer(native.split(",")) is RoiGraphMetricHeatmap
+    assert select_renderer(legacy.split(",")) is RoiGraphMetricHeatmap
+
+
+def test_graph_metric_native_render_skips_global_rows(tmp_path):
+    from source_lightbox.render import RoiGraphMetricHeatmap, _records
+
+    headers = "hypothesis,band,spatial,conn_metric,graph_metric,stat,q_value".split(",")
+    rows = []
+    for band in ("Theta", "Alpha"):
+        rows.append(["disease_effect", band, "", "imag_coherence", "modularity", "1.2", "0.2"])  # global
+        for roi in ("Motor_L", "Motor_R"):
+            rows.append(["disease_effect", band, roi, "imag_coherence", "degree", "2.5", "0.01"])
+    recs = _records(headers, rows)
+    out = RoiGraphMetricHeatmap.render(recs, headers, tmp_path, "roi_graph_hypotheses", 50, overview=True)
+    assert len(out) == 1 and "degree" in out[0].name
+
+
+def test_module_draws_one_graph_metric_set(tmp_path):
+    """Native hypotheses + legacy stats both match the graph renderer; only one
+    figure set is produced for the module (no duplicate heatmaps)."""
+    from source_lightbox.render import render_table_figures
+    from source_lightbox.scanner import TableEntry
+
+    d = tmp_path / "tables"
+    d.mkdir()
+    native = d / "roi_graph_hypotheses.csv"
+    native.write_text("hypothesis,band,spatial,conn_metric,graph_metric,stat,q_value\n"
+                      "disease_effect,Theta,Motor_L,imag_coherence,degree,2.5,0.01\n"
+                      "disease_effect,Theta,Motor_R,imag_coherence,degree,-1.0,0.30\n")
+    legacy = d / "roi_graph_stats.csv"
+    legacy.write_text("contrast,band,conn_metric,graph_metric,roi,t,p,p_fdr\n"
+                      "disease_effect,Theta,imag_coherence,degree,Motor_L,2.5,0.001,0.01\n"
+                      "disease_effect,Theta,imag_coherence,degree,Motor_R,-1.0,0.2,0.30\n")
+    tables = [TableEntry(src_path=p, source_label="ROI", paradigm="resting", analysis="roi_graph",
+                         filename=p.name) for p in (native, legacy)]
+    figs = render_table_figures(tables, tmp_path / "out", dpi=50)
+    assert len(figs) == 1
+
+
+def test_circos_trigger_needs_subnetwork_edges_and_edge_csv(tmp_path, monkeypatch):
+    """Circos are driven by the NBS module's *_subnetwork_edges.csv plus the
+    roi_connectivity edge CSV in the analytics tree — the retired region-pair
+    posthoc table is not required. The worker itself is stubbed."""
+    from source_lightbox.scanner import TableEntry
+
+    tbl_dir = tmp_path / "tables"
+    tbl_dir.mkdir()
+    sub = tbl_dir / "roi_nbs_subnetwork_edges.csv"
+    sub.write_text("hypothesis,band,dv,component_id,component_p,significant,node_i,node_j,roi_i,roi_j,stat\n"
+                   "disease_effect,Theta,imag_coherence,1,0.001,True,0,1,Motor_L,Motor_R,3.1\n")
+    nbs = tbl_dir / "roi_nbs_results.csv"
+    nbs.write_text("key,component,n_edges,p_corrected\ndisease_effect_Theta_imag_coherence,1,4,0.001\n")
+    analytics = tmp_path / "analytics"
+    edges = analytics / "resting" / "roi_connectivity" / "data" / "roi_connectivity_edges.csv"
+    edges.parent.mkdir(parents=True)
+    edges.write_text("subject,group,band,roi1,roi2,imag_coherence\n")
+
+    calls = []
+
+    def fake_render(edges_csv, subnetwork_csv, out_dir, contrasts, **kw):
+        calls.append((edges_csv, subnetwork_csv))
+        p = Path(out_dir) / "circos__imag_coherence__Theta__disease_effect.png"
+        p.write_bytes(b"PNG")
+        return [p]
+
+    import source_lightbox.circos as circos_mod
+
+    monkeypatch.setattr(circos_mod, "circos_available", lambda py=None: True)
+    monkeypatch.setattr(circos_mod, "render_circos", fake_render)
+
+    tables = [TableEntry(src_path=p, source_label="ROI", paradigm="resting", analysis="roi_nbs",
+                         filename=p.name) for p in (sub, nbs)]
+    figs = render_table_figures(
+        tables, tmp_path / "out", dpi=50,
+        circos={"analytics_dir": str(analytics),
+                "contrasts": [{"name": "disease_effect", "group_a": "KO", "group_b": "WT"}]})
+    assert calls == [(edges, sub)]
+    names = sorted(f.filename for f in figs)
+    # circos AND the NBS component heatmap (circos no longer replace the overview)
+    assert names[0].startswith("circos__") and any("nbs" in n for n in names[1:])

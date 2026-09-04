@@ -312,6 +312,8 @@ class RoiBandHeatmap(_Renderer):
 
     @staticmethod
     def matches(headers):
+        if "graph_metric" in headers:   # nodal graph tables have their own renderer
+            return False
         return (_any(headers, "hypothesis", "contrast")
                 and _any(headers, "spatial", "roi")
                 and "band" in headers
@@ -354,30 +356,37 @@ class RoiGraphMetricHeatmap(_Renderer):
 
     @staticmethod
     def matches(headers):
-        return _has(headers, "contrast", "roi", "band", "graph_metric", "t")
+        return (_any(headers, "hypothesis", "contrast")
+                and _any(headers, "spatial", "roi")
+                and _has(headers, "band", "graph_metric")
+                and _any(headers, "stat", "t"))
 
     @staticmethod
     def render(records, headers, out_dir, stem, dpi, overview=False, contrast_labels=None):
         def sig_fn(rec):
-            f = _to_float(rec.get("p_fdr"))
+            f = _to_float(rec.get("q_value"))
             return f is not None and f < 0.05
+
+        # Nodal rows only: the native hypotheses table also carries the global
+        # (whole-network) metrics with an empty spatial cell.
+        records = [r for r in _to_native(records) if r.get("spatial") not in (None, "")]
 
         # Feature one connectivity metric (the table carries all five).
         conn_vals = _unique(records, "conn_metric")
         conn = _pick_preferred(conn_vals, _CONN_METRIC_PREF) if conn_vals else None
         recs = [r for r in records if r.get("conn_metric") == conn] if conn else records
 
-        contrasts = _unique(recs, "contrast")
+        contrasts = _unique(recs, "hypothesis")
         if overview and contrasts:
             contrasts = [_pick_preferred(contrasts, _CONTRAST_PREF)]
 
         out = []
         for contrast in contrasts:
-            csub = [r for r in recs if r.get("contrast") == contrast]
+            csub = [r for r in recs if r.get("hypothesis") == contrast]
             for gm in _unique(csub, "graph_metric"):
                 subset = [r for r in csub if r.get("graph_metric") == gm]
                 mat, rows, cols, smask = _grid(
-                    subset, "roi", "band", lambda r: _to_float(r.get("t")), sig_fn=sig_fn,
+                    subset, "spatial", "band", lambda r: _to_float(r.get("stat")), sig_fn=sig_fn,
                 )
                 if not rows or not cols:
                     continue
@@ -624,6 +633,24 @@ def _table_priority(filename: str) -> int:
     return 30
 
 
+def _connectivity_edges_csv(analytics_dir: Path, paradigm: str, analysis: str) -> Path | None:
+    """The per-subject connectivity edge table an NBS module was computed from.
+
+    source-analytics keeps it in the working tree: the module's own
+    ``data/<analysis>_edges.csv`` or, for the graph/NBS modules that consume
+    roi_connectivity's matrices, ``roi_connectivity/data/roi_connectivity_edges.csv``.
+    """
+    candidates = [
+        analytics_dir / paradigm / analysis / "data" / f"{analysis}_edges.csv",
+        analytics_dir / paradigm / "roi_connectivity" / "data" / "roi_connectivity_edges.csv",
+        analytics_dir / paradigm / "roi_connectivity" / "data" / "connectivity_edges.csv",
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return None
+
+
 def _roi_posthoc_table(group):
     """The per-ROI posthoc table in a module group, if present (for brain mosaics)."""
     for tbl in group:
@@ -646,7 +673,9 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
     ``brain`` is configured and source-analytics is available); otherwise the
     module gets a single flat overview figure from its highest-priority table.
 
-    ``brain`` is an optional dict: ``{categories, contrasts, python, power_type}``.
+    ``brain`` is an optional dict: ``{categories, contrasts, python, power_type}``
+    (``categories`` may be None — the worker then auto-picks the bundled atlas
+    file). ``circos`` is ``{analytics_dir, contrasts, labels, metrics, python}``.
 
     Returns a list of :class:`~source_lightbox.scanner.FigureEntry`
     (category ``"analytics"``).
@@ -660,46 +689,50 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
 
     # Brain mosaics and circos are optional and require source-analytics.
     brain_ok = False
-    if brain and brain.get("categories"):
+    if brain:
         from . import brain_mosaic
 
         brain_ok = brain_mosaic.brain_available(brain.get("python"))
         if not brain_ok:
-            log("  (brain mosaics unavailable — source-analytics not found; using heatmaps)")
+            log("  WARNING: brain mosaics unavailable — source-analytics interpreter not "
+                f"usable at {brain_mosaic.resolve_python(brain.get('python'))}; using heatmaps")
 
     circos_ok = False
     if circos and circos.get("contrasts"):
         from . import circos as circos_mod
 
         circos_ok = circos_mod.circos_available(circos.get("python"))
+        if not circos_ok:
+            log("  WARNING: circos unavailable — source-analytics interpreter not usable "
+                f"at {circos_mod._resolve(circos.get('python'))}")
 
     figures: list[FigureEntry] = []
     for (source, paradigm, analysis), group in modules.items():
         dest = staging / _slugify(source) / paradigm / analysis
 
-        # 0. Connectivity circos: significance chord diagrams (32 ROIs grouped by
-        #    region) for modules with a region-pair posthoc table + edge data.
+        # 0. Connectivity circos: significance chord diagrams (ROIs grouped by
+        #    region) for NBS modules, gated on the FDR-significant subnetworks in
+        #    the module's *_subnetwork_edges.csv (written by source-analytics next
+        #    to its hypotheses table). They render ALONGSIDE the module's overview
+        #    (the NBS component heatmap), not instead of it.
         if circos_ok:
-            region_tbl = next((t for t in group if "posthoc_region_pair" in t.filename.lower()), None)
-            if region_tbl is not None:
-                edges_csv = (Path(circos["analytics_dir"]) / paradigm / analysis
-                             / "data" / f"{analysis}_edges.csv")
-                # Omnibus table to gate the post-hoc circos on global significance.
-                global_tbl = next((t for t in group if t.filename.lower().endswith("global.csv")), None)
-                if edges_csv.exists():
+            sub_tbl = next((t for t in group if t.filename.lower().endswith("_subnetwork_edges.csv")), None)
+            if sub_tbl is not None:
+                edges_csv = _connectivity_edges_csv(Path(circos["analytics_dir"]), paradigm, analysis)
+                if edges_csv is None:
+                    log(f"  WARNING: circos skipped for {paradigm}/{analysis}: no connectivity "
+                        f"edge CSV under {Path(circos['analytics_dir']) / paradigm}")
+                else:
                     dest.mkdir(parents=True, exist_ok=True)
                     paths = circos_mod.render_circos(
-                        edges_csv, region_tbl.src_path, dest, circos["contrasts"],
-                        global_csv=(global_tbl.src_path if global_tbl else None),
+                        edges_csv, sub_tbl.src_path, dest, circos["contrasts"],
                         metrics=circos.get("metrics"),
                         labels=circos.get("labels"), python_path=circos.get("python"), log=log,
                     )
-                    if paths:
-                        for path in paths:
-                            figures.append(FigureEntry(
-                                src_path=path, category="analytics", source_label=source,
-                                paradigm=paradigm, analysis=analysis, filename=path.name))
-                        continue  # circos stand in for this module's overview
+                    for path in paths:
+                        figures.append(FigureEntry(
+                            src_path=path, category="analytics", source_label=source,
+                            paradigm=paradigm, analysis=analysis, filename=path.name))
 
         # 1. Brain mosaics for ROI posthoc modules (replace the flat overview).
         if brain_ok:
@@ -780,8 +813,9 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
         #    maps of the same connectivity matrices. (When the graph table is the
         #    only renderable one it is already the chosen overview above — skip it
         #    here so it isn't drawn twice.)
-        for tbl2 in group:
-            if chosen is not None and tbl2 is chosen[0]:
+        graph_done = renderer is RoiGraphMetricHeatmap
+        for tbl2 in ranked:
+            if graph_done or (chosen is not None and tbl2 is chosen[0]):
                 continue
             try:
                 data2 = _read_csv(tbl2.src_path)
@@ -789,6 +823,7 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
                 continue
             if select_renderer(data2["headers"]) is not RoiGraphMetricHeatmap:
                 continue
+            graph_done = True  # native hypotheses + legacy stats: draw the first only
             records2 = _records(data2["headers"], data2["rows"])
             if contrast_labels:
                 for rec in records2:

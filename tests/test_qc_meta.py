@@ -39,3 +39,21 @@ def test_missing_subject_defaults():
 def test_empty_metrics():
     meta = compute_subject_meta([], ["sub-801"])
     assert meta["sub-801"] == {"group": None, "outliers": []}
+
+
+def test_sessioned_folder_keys_match_bare_qc_ids():
+    """Folders are named by output_id (sub-<id>[_ses-X][_rec-Y]); the QC CSV
+    carries the bare subject_id. Both must line up."""
+    keys = ["sub-801_ses-01", "sub-802_ses-01_rec-02", "sub-803"]
+    meta = compute_subject_meta(_metrics(), keys)
+    assert meta["sub-801_ses-01"]["group"] == "WT_VEH"
+    assert meta["sub-802_ses-01_rec-02"]["group"] is not None
+    assert meta["sub-803"]["outliers"] == ["stc_amp_mean"]
+
+
+def test_full_output_id_in_qc_wins_over_bare_id():
+    rows = _metrics()
+    rows.append({**rows[0], "subject_id": "801_ses-02", "group": "SESSION2"})
+    meta = compute_subject_meta(rows, ["sub-801_ses-02", "sub-801_ses-01"])
+    assert meta["sub-801_ses-02"]["group"] == "SESSION2"
+    assert meta["sub-801_ses-01"]["group"] == "WT_VEH"   # falls back to bare 801

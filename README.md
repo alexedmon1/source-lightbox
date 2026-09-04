@@ -47,7 +47,7 @@ name them once in the config's `paths:` block, and the builder wires them up:
 |---|---|---|---|
 | **Localization output** | per-subject source reconstruction + `qc/` (from `source-localization`) | `paths.localizations` | **Localization → Subjects / QC** |
 | **Results** | `tables/<paradigm>/<analysis>/*.csv` (from `source-analytics`) | `paths.results` | **Analytics** — overview figures + tables |
-| **Analytics working dir** | `<paradigm>/<analysis>/ANALYSIS_SUMMARY.md` | `paths.analytics` | the **Summary** tab on each analysis page |
+| **Analytics working dir** | `<paradigm>/roi_connectivity/data/*_edges.csv` | `paths.analytics` | per-subject edge CSVs the circos chords are averaged from (the **Summary** tab is a digest generated from the tables) |
 
 Key idea — **two source namespaces, kept separate**:
 
@@ -73,14 +73,19 @@ name: "FORGE — Treatment (MS2)"      # gallery title
 
 paths:
   results:    ./results_treatment    # source-analytics tables/  (Analytics)
-  analytics:  ./analytics_treatment  # ANALYSIS_SUMMARY.md files  (Summary tabs)
+  analytics:  ./analytics_treatment  # source-analytics working tree (edge CSVs for circos)
+  # results_profile: external        # read results/<profile>/ + analytics/<profile>/ (SA --profile runs)
   gallery:    ./gallery_treatment    # OUTPUT dir the gallery is written to
   localizations:                     # reconstruction pipelines (Subjects/QC)
     - {path: ./localization/rest_roi,   label: "Allen ROI"}
     - {path: ./localization/rest_shell, label: "Shell"}
   # optional:
   roi_categories: ./allen_roi_categories_proposed.yaml   # for brain mosaics
-  source_analytics_python: ~/sandbox/source-analytics/.venv/bin/python
+  source_analytics_python: ~/sandbox/source-analytics/.venv/bin/python   # ~ is expanded
+
+# groups drive the treatment-group chips / labels on the Localization pages
+groups: {WT_VEH: "WT Vehicle", KO_VEH: "KO Vehicle", KO_HD_ICV: "KO HD-ICV"}
+group_order: [WT_VEH, KO_VEH, KO_HD_ICV]
 
 # contrasts drive: digest labels, heatmap axes, brain-mosaic titles, circos pairs
 contrasts:
@@ -118,15 +123,17 @@ same overview set with zero per-study configuration.
 
 | Table has columns (subset) | Overview figure |
 |---|---|
-| `contrast`, `band`/`freq_pair`, `hedges_g` | Contrast × band effect-size heatmap (★ = significant) |
-| `contrast`, `roi`, `band`, `hedges_g` | Per-ROI effect-size heatmap (preferred contrast) |
-| `contrast`, `roi`, `band`, `graph_metric`, `t` | Per-ROI graph-metric *t* heatmaps (degree/clustering/betweenness) |
+| `hypothesis`, `band`/`freq_pair`, `effect_size` | Contrast × band effect-size heatmap (★ = significant) |
+| `hypothesis`, `spatial`, `band`, `effect_size` | Per-ROI effect-size heatmap (preferred contrast) |
+| `hypothesis`, `spatial`, `band`, `graph_metric`, `stat` | Per-ROI graph-metric *t* heatmaps (degree/clustering/betweenness) |
 | `band` + `auc`/`accuracy` + `ci_*` | Contrast × band decoding heatmap (centered at chance) |
 | `band`, `max_abs_hedges_g` | Contrast × band effect-size summary heatmap |
 | `band`, `cluster_stat`, `p_corrected` | Contrast × band cluster-strength heatmap |
 | `key`, `component`, `n_edges`, `p_corrected` | NBS largest-component heatmap, per connectivity metric |
 
-Per-row significance precedence: `significant` flag → `q_value` → `p_corrected`
+Column names are the native `source-analytics` hypothesis schema; the legacy
+aliases (`contrast`, `roi`, `hedges_g`, `t`, `p_fdr`, `power_type`) are still
+read. Per-row significance precedence: `significant` flag → `q_value` → `p_corrected`
 → `p_fdr` → `p_value` (threshold 0.05). Bands order Delta, Theta, Alpha, Beta,
 Low Gamma, High Gamma (unknown bands appended). Per-vertex raw tables
 (`vertex_idx`) are skipped — their `*_summary` carries the overview. A module
@@ -147,14 +154,23 @@ fall back to a heatmap.
 
 - **Brain mosaics** — ROI modules with a `*_posthoc_roi` table get ROI effect
   sizes painted on mouse-brain anatomy, one mosaic per `(contrast, band)` with
-  ≥1 FDR-significant ROI.
-- **Connectivity circos** — modules with a `*_posthoc_region_pair` table get
-  significance chord diagrams (32 ROIs grouped by anatomical region), one per
-  `circos_metrics` entry × significant `(contrast, band)`.
+  ≥1 FDR-significant ROI (aperiodic tables facet on `dv` — exponent / offset —
+  instead of band). `paths.roi_categories` is optional: without it the bundled
+  atlas file whose ROI names match the table is used.
+- **Connectivity circos** — NBS modules (`roi_nbs`) with a
+  `*_subnetwork_edges.csv` table (written by `source-analytics` next to
+  `roi_nbs_hypotheses.csv`; it lists the edges of every NBS component) get
+  significance chord diagrams (32 ROIs grouped by anatomical region) alongside
+  the NBS component heatmap, one per `circos_metrics` entry × contrast × band
+  with an FDR-significant subnetwork. The chords are group-mean differences
+  from `roi_connectivity`'s per-subject edge CSV under `paths.analytics`.
 
-Both are curated by the config (`contrasts:`, `circos_metrics:`,
+Both are curated by the config (`contrasts:` / `hypotheses:`, `circos_metrics:`,
 `paths.roi_categories`, `paths.source_analytics_python`). Override on the CLI with
-`--roi-categories`, `--brain-python`, or `--no-brain`.
+`--roi-categories`, `--brain-python`, or `--no-brain`. If the source-analytics
+interpreter is missing or cannot import, the build prints a warning and falls
+back to heatmaps (and groups every analysis under "Other", since the domain
+metadata comes from the same interpreter).
 
 ---
 

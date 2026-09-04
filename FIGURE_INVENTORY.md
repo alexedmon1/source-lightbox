@@ -145,7 +145,7 @@ Dispatch is **column-driven**: `select_renderer` returns the first `REGISTRY` re
 | `SummaryHeatmap` (:528) | band, max_abs_hedges_g | **No SA equivalent** |
 | `EffectSizeHeatmap` (:556) | (effect_size\|hedges_g)+(hypothesis\|contrast)+(band\|freq_pair) | Generic fallback — overlaps SA `effect_heatmap` |
 
-Also, when the relevant tables exist, LB **replaces** the overview with SA-rendered **brain mosaics** (needs `posthoc_roi` table) or **circos** (needs `posthoc_region_pair` + `<analysis>_edges.csv`) via the delegated subprocesses.
+Also, when the relevant tables exist, LB **replaces** the overview with SA-rendered **brain mosaics** (needs `posthoc_roi` table) or **circos** (needs `roi_nbs_subnetwork_edges.csv` + roi_connectivity's `*_edges.csv`; the region-pair posthoc trigger was replaced 2026-09-04) via the delegated subprocesses.
 
 ---
 

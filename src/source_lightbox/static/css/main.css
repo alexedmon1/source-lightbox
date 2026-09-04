@@ -1197,3 +1197,41 @@ main {
   border-radius: 3px;
   color: var(--text-secondary);
 }
+
+
+/* ── Digest role badges (contrast_meta: role / gate_on) ── */
+.sig-role, .sig-gate {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  margin-right: 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  vertical-align: middle;
+}
+.sig-role-confirmatory { color: var(--accent-color); border-color: var(--accent-color); }
+.sig-gate { text-transform: none; letter-spacing: 0; font-weight: 500; }
+
+/* ── Grouped tables: one <tbody> per group so sorting stays within a group ── */
+.table-container tbody.group-headers tr { background: transparent; }
+.table-container tbody tr:nth-child(even) { background: var(--table-stripe); }
+.table-container tbody tr:nth-child(odd) { background: transparent; }
+.table-container tbody tr.significant { background: var(--highlight-bg); }
+.table-container th[aria-sort="ascending"] .sort-indicator::after { content: "\25B2"; }
+.table-container th[aria-sort="descending"] .sort-indicator::after { content: "\25BC"; }
+.table-note a { color: var(--accent-color); }
+
+/* ── Search results: page links above the figure grid ── */
+.search-links { list-style: none; margin: 0 0 18px; padding: 0; }
+.search-links li { padding: 4px 0; border-bottom: 1px solid var(--border-color); font-size: 13px; }
+.search-links a { color: var(--text-primary); text-decoration: none; }
+.search-links a:hover { color: var(--accent-color); }
+.search-kind {
+  display: inline-block; min-width: 82px; margin-right: 6px; font-size: 10px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted);
+}
+.search-sub { color: var(--text-muted); font-size: 12px; margin-left: 6px; }

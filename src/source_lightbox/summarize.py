@@ -483,6 +483,7 @@ def _group_pair(rows) -> str:
 
 def build_significance_summary(tables: list[dict], contrast_labels: dict | None = None,
                                contrast_groups: dict | None = None,
+                               contrast_meta: dict | None = None,
                                region_pair_table: dict | None = None) -> str | None:
     """Return concise HTML summarizing significant effects by contrast, or None.
 
@@ -490,7 +491,45 @@ def build_significance_summary(tables: list[dict], contrast_labels: dict | None 
     ``contrast_labels`` maps raw contrast names to readable labels for display.
     ``contrast_groups`` maps contrast names to a tier/group label; when given, the
     digest is organized into sections in the group's first-seen (YAML) order.
+    ``contrast_meta`` maps contrast names to ``{role, test, gate_on}``; each
+    contrast is badged with its role and gated contrasts name their gate.
     """
+    html = _build_significance_summary(tables, contrast_labels, contrast_groups,
+                                       region_pair_table)
+    if html is None or not contrast_meta:
+        return html
+    return _apply_role_badges(html, contrast_labels or {}, contrast_meta)
+
+
+def _apply_role_badges(html: str, labels: dict, contrast_meta: dict) -> str:
+    """Append a role badge (confirmatory / exploratory; gated-on note) after each
+    contrast's name span. Every digest builder emits the same
+    ``<span class="sig-contrast">label</span>`` fragment, so one pass covers all
+    of them without threading the metadata through each builder.
+    """
+    for name, meta in contrast_meta.items():
+        if not isinstance(meta, dict):
+            continue
+        role = meta.get("role")
+        gate = meta.get("gate_on") or []
+        if isinstance(gate, str):
+            gate = [gate]
+        if not role and not gate:
+            continue
+        badge = ""
+        if role:
+            badge += f'<span class="sig-role sig-role-{escape(str(role))}">{escape(str(role))}</span>'
+        if gate:
+            gate_labels = ", ".join(str(labels.get(g, g)) for g in gate)
+            badge += (f'<span class="sig-gate" title="Only interpreted if the gating '
+                      f'contrast is significant">gated on {escape(gate_labels)}</span>')
+        frag = f'<span class="sig-contrast">{escape(str(labels.get(name, name)))}</span>'
+        html = html.replace(frag, frag + badge)
+    return html
+
+
+def _build_significance_summary(tables, contrast_labels, contrast_groups,
+                                region_pair_table):
     labels = contrast_labels or {}
     groups = contrast_groups or {}
 

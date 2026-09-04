@@ -47,6 +47,43 @@ def normalize_study_contrasts(study_cfg: dict) -> list[dict]:
     return out
 
 
+def resolve_config_path(raw: str | None, default: str, config_dir: Path) -> str:
+    """Resolve a ``paths:`` entry from the study YAML.
+
+    ``~`` is expanded first (the README documents
+    ``source_analytics_python: ~/sandbox/.../python``), then relative paths are
+    taken relative to the YAML's directory.
+    """
+    pp = Path(raw or default).expanduser()
+    resolved = pp if pp.is_absolute() else (config_dir / pp).resolve()
+    return str(resolved)
+
+
+def study_group_display(study_cfg: dict) -> tuple[dict | None, list | None]:
+    """``(group_labels, group_order)`` from the study YAML's ``groups:`` block.
+
+    source-analytics declares ``groups: {id: label}`` (or a list of
+    ``{name/id, label}``) plus an optional ``group_order:``. Returns ``(None,
+    None)`` when the study declares neither.
+    """
+    raw = study_cfg.get("groups")
+    labels: dict = {}
+    if isinstance(raw, dict):
+        labels = {str(k): (str(v) if isinstance(v, str) else str((v or {}).get("label") or k))
+                  for k, v in raw.items()}
+    elif isinstance(raw, list):
+        for g in raw:
+            if isinstance(g, dict):
+                gid = g.get("name") or g.get("id")
+                if gid:
+                    labels[str(gid)] = str(g.get("label") or gid)
+            elif isinstance(g, str):
+                labels[g] = g
+    order = study_cfg.get("group_order")
+    order = [str(g) for g in order] if isinstance(order, list) else (list(labels) or None)
+    return (labels or None), order
+
+
 class _PairedOption(click.Option):
     """Custom option that collects paired --flag/--label values."""
 
@@ -88,7 +125,8 @@ def main():
 @click.option(
     "--analytics",
     type=click.Path(exists=True, file_okay=False),
-    help="Analytics working directory (for ANALYSIS_SUMMARY.md files).",
+    help="source-analytics working directory (paths.analytics). Only its per-subject "
+         "connectivity edge CSVs are read, for the circos chords.",
 )
 @click.option(
     "--output",
@@ -177,6 +215,8 @@ def build(
     paradigm_display = None
     # Analyses to omit from the gallery (from --config); CLI flag takes precedence.
     cfg_exclude = None
+    # Treatment-group display names / order (from --config `groups:`).
+    group_labels = group_order = None
 
     # If --config provided, read paths from unified study.yaml
     if config_file is not None:
@@ -188,41 +228,48 @@ def build(
         paths = study_cfg.get("paths", {})
 
         def _resolve(p: str, default: str) -> str:
-            raw = p or default
-            pp = Path(raw)
-            resolved = pp if pp.is_absolute() else (config_dir / pp).resolve()
-            return str(resolved)
+            return resolve_config_path(p, default, config_dir)
 
         cfg_analytics = _resolve(paths.get("analytics"), "./analytics")
+        # source-analytics `--profile NAME` runs write to results/<NAME>/ and
+        # analytics/<NAME>/; `paths.results_profile` selects that subtree.
+        profile = paths.get("results_profile") or study_cfg.get("gallery_profile")
+        if profile:
+            cfg_analytics = str(Path(cfg_analytics) / str(profile))
 
-        def _labeled_inputs(spec, scalar_default, scalar_label):
+        def _labeled_inputs(spec, scalar_default, scalar_label, explicit, sub=None):
             """Parse a paths entry that is either a list of {path, label} (compared
-            sources, e.g. Shell vs Cartesian) or a single scalar path."""
+            sources, e.g. Shell vs Cartesian) or a single scalar path. Configured
+            paths that are not directories are reported (a typo otherwise builds a
+            quietly incomplete gallery); only the implicit default is skipped
+            silently. ``sub`` appends a profile subdirectory."""
             out = []
-            if isinstance(spec, list):
-                for entry in spec:
-                    if isinstance(entry, dict):
-                        p = _resolve(entry.get("path"), "")
-                        lbl = entry.get("label") or Path(p).name
-                    else:
-                        p = _resolve(entry, "")
-                        lbl = Path(p).name
-                    if Path(p).is_dir():
-                        out.append(SourceInput(path=p, label=lbl))
-            else:
-                p = _resolve(spec, scalar_default)
+            entries = spec if isinstance(spec, list) else [spec]
+            for entry in entries:
+                if isinstance(entry, dict):
+                    p = _resolve(entry.get("path"), scalar_default)
+                    lbl = entry.get("label") or Path(p).name
+                else:
+                    p = _resolve(entry, scalar_default)
+                    lbl = (scalar_label if not isinstance(spec, list) else None) or Path(p).name
+                if sub:
+                    p = str(Path(p) / sub)
                 if Path(p).is_dir():
-                    out.append(SourceInput(path=p, label=scalar_label or Path(p).name))
+                    out.append(SourceInput(path=p, label=lbl))
+                elif explicit:
+                    click.echo(f"WARNING: configured path is not a directory, skipping: {p}",
+                               err=True)
             return out
 
         # Localization pipelines and analytics results are both source namespaces:
         # each may be a list of {path, label} (to compare reconstructions) or scalar.
+        loc_spec = paths.get("localizations") or paths.get("localization")
         config_loc_inputs.extend(
-            _labeled_inputs(paths.get("localizations") or paths.get("localization"),
-                            "./localization", "Localization")
+            _labeled_inputs(loc_spec, "./localization", "Localization", loc_spec is not None)
         )
         config_res_inputs.extend(
-            _labeled_inputs(paths.get("results"), "./results", None)
+            _labeled_inputs(paths.get("results"), "./results", None,
+                            paths.get("results") is not None, sub=profile)
         )
 
         # Merge: CLI flags take precedence over config
@@ -283,6 +330,11 @@ def build(
             bp = paths.get("source_analytics_python")
             if bp:
                 brain_python = _resolve(bp, "")
+                if not Path(brain_python).is_file():
+                    click.echo(f"WARNING: paths.source_analytics_python is not a file: "
+                               f"{brain_python} (mosaics, circos and analysis metadata "
+                               "will be unavailable)", err=True)
+        group_labels, group_order = study_group_display(study_cfg)
 
     if title is None:
         title = "Source Analysis Gallery"
@@ -342,6 +394,8 @@ def build(
         contrast_pairs=contrast_pairs,
         circos_metrics=circos_metrics,
         paradigm_display=paradigm_display,
+        group_labels=group_labels,
+        group_order=group_order,
         home_link=home_link,
         home_label=home_label,
         # CLI flag > study-config `exclude_analyses:` > BuildConfig built-in default.
@@ -365,12 +419,15 @@ def _serve_gallery(gallery: Path, port: int) -> None:
         sys.exit(1)
 
     handler = partial(http.server.SimpleHTTPRequestHandler, directory=str(gallery))
-    # Reuse the address so re-hosting right after a previous serve doesn't hit
-    # "address already in use" while the old socket lingers in TIME_WAIT.
-    socketserver.TCPServer.allow_reuse_address = True
+
+    class _Server(socketserver.TCPServer):
+        # Reuse the address so re-hosting right after a previous serve doesn't hit
+        # "address already in use" while the old socket lingers in TIME_WAIT.
+        allow_reuse_address = True
+
     click.echo(f"Serving gallery at http://localhost:{port}")
     click.echo("Press Ctrl+C to stop.")
-    with socketserver.TCPServer(("", port), handler) as httpd:
+    with _Server(("", port), handler) as httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
@@ -404,7 +461,7 @@ def info(gallery_dir):
     click.echo(f"Paradigms: {stats.get('paradigm_count', 0)}")
     click.echo(f"Figures: {stats.get('total_figures', 0)}")
     click.echo(f"Tables: {stats.get('total_tables', 0)}")
-    click.echo(f"Summaries: {stats.get('total_summaries', 0)}")
+    click.echo(f"Digests: {stats.get('total_summaries', 0)}")
 
     # List paradigms and analyses
     for paradigm, analyses in manifest.get("paradigms", {}).items():

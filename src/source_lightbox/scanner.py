@@ -1,4 +1,4 @@
-"""Scan input directories for figures, tables, and summaries."""
+"""Scan input directories for figures, tables, and QC artefacts."""
 
 from __future__ import annotations
 
@@ -34,9 +34,9 @@ class FigureEntry:
 
     @property
     def thumb_rel_path(self) -> str:
-        """Relative path for the thumbnail."""
+        """Relative path for the thumbnail (always a JPEG)."""
         base = self.gallery_rel_path
-        return "thumbs/" + re.sub(r"\.png$", ".jpg", base, flags=re.IGNORECASE)
+        return "thumbs/" + re.sub(r"\.(png|jpe?g|webp)$", ".jpg", base, flags=re.IGNORECASE)
 
 
 @dataclass
@@ -55,19 +55,6 @@ class TableEntry:
 
 
 @dataclass
-class SummaryEntry:
-    """A discovered ANALYSIS_SUMMARY.md file."""
-
-    src_path: Path
-    paradigm: str
-    analysis: str
-
-    @property
-    def gallery_rel_path(self) -> str:
-        return f"summaries/{self.paradigm}/{self.analysis}.html"
-
-
-@dataclass
 class QCEntry:
     """QC metrics and report."""
 
@@ -82,7 +69,6 @@ class ScanResult:
 
     figures: list[FigureEntry] = field(default_factory=list)
     tables: list[TableEntry] = field(default_factory=list)
-    summaries: list[SummaryEntry] = field(default_factory=list)
     qc_entries: list[QCEntry] = field(default_factory=list)
 
 
@@ -150,8 +136,20 @@ class LocalizationScanner:
         return result
 
 
+# Raster figure formats the gallery copies and thumbnails (Pillow-readable).
+IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
+
+
+def _is_image(path: Path) -> bool:
+    return path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+
+
 class ResultsScanner:
-    """Scan a source-analytics results directory."""
+    """Scan a source-analytics results directory (``tables/`` + ``figures/``).
+
+    Point it at ``results/<profile>`` for a profile run — the layout below the
+    root is the same.
+    """
 
     def __init__(self, path: Path, label: str):
         self.path = Path(path)
@@ -160,7 +158,9 @@ class ResultsScanner:
     def scan(self) -> ScanResult:
         result = ScanResult()
 
-        # Figures: figures/<paradigm>/<analysis>/*.png
+        # Figures: figures/<paradigm>/<analysis>/**/*.{png,jpg,webp}. Nested
+        # subfolders are flattened into the filename (a/b.png -> a__b.png) so
+        # every figure of a module lives in one gallery folder.
         figs_root = self.path / "figures"
         if figs_root.exists():
             for paradigm_dir in sorted(figs_root.iterdir()):
@@ -171,7 +171,8 @@ class ResultsScanner:
                     if not analysis_dir.is_dir():
                         continue
                     analysis = analysis_dir.name
-                    for fig in sorted(analysis_dir.glob("*.png")):
+                    for fig in sorted(p for p in analysis_dir.rglob("*") if _is_image(p)):
+                        rel = fig.relative_to(analysis_dir)
                         result.figures.append(
                             FigureEntry(
                                 src_path=fig,
@@ -179,7 +180,7 @@ class ResultsScanner:
                                 source_label=self.label,
                                 paradigm=paradigm,
                                 analysis=analysis,
-                                filename=fig.name,
+                                filename="__".join(rel.parts),
                             )
                         )
 
@@ -204,39 +205,6 @@ class ResultsScanner:
                                 filename=tbl.name,
                             )
                         )
-
-        return result
-
-
-class AnalyticsScanner:
-    """Scan the analytics working directory for ANALYSIS_SUMMARY.md files."""
-
-    def __init__(self, path: Path):
-        self.path = Path(path)
-
-    def scan(self) -> ScanResult:
-        result = ScanResult()
-
-        for md_file in sorted(self.path.rglob("ANALYSIS_SUMMARY.md")):
-            rel = md_file.relative_to(self.path)
-            parts = rel.parts
-            if len(parts) >= 3:
-                # <paradigm>/<analysis>/ANALYSIS_SUMMARY.md
-                paradigm = parts[0]
-                analysis = parts[1]
-            elif len(parts) == 2:
-                paradigm = parts[0]
-                analysis = parts[0]
-            else:
-                continue
-
-            result.summaries.append(
-                SummaryEntry(
-                    src_path=md_file,
-                    paradigm=paradigm,
-                    analysis=analysis,
-                )
-            )
 
         return result
 

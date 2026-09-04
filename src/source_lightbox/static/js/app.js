@@ -106,7 +106,8 @@
      (the primary it runs *after*, consuming its output). The gallery shows one
      page per (paradigm × domain); a secondary nests right after its primary as a
      sub-tab. Domain order is fixed; unknown domains fall to the end. */
-  var DOMAIN_ORDER = ["Spectral", "Connectivity", "Cross-frequency", "Sensor-level", "Source vs Sensor", "Evoked", "Other"];
+  var DOMAIN_ORDER = ["Spectral", "Connectivity", "Directed", "Cross-frequency", "Multivariate",
+                      "Sensor-level", "Source vs Sensor", "Evoked", "Other"];
   // "Sensor-level" is a distinct acquisition level (scalp electrodes, not source-
   // localized ROI/vertex data), so in the nav it is promoted out of its paradigm's
   // domain list into its own study-design heading rather than listed under ROI/vertex.
@@ -422,7 +423,8 @@
 
     if (sources.length > 1) {
       renderSourceSelector(sources, src, function (newSrc) {
-        location.hash = "#/analytics/" + encodeURIComponent(newSrc) + "/" + paradigm + "/" + analysis;
+        location.hash = "#/analytics/" + encodeURIComponent(newSrc) + "/" +
+          encodeURIComponent(paradigm) + "/" + encodeURIComponent(analysis);
       });
     } else {
       clearSourceSelector();
@@ -459,8 +461,12 @@
       // Circos sets get a metric-tab / band-row layout of small click-to-enlarge
       // plots; larger sets are split into collapsible groups by an adaptive axis;
       // small sets get full-width titled rows.
-      if (figs[0].filename.indexOf("circos__") === 0) {
-        figPanel = renderCircosFigures(figs);
+      var circos = figs.filter(function (f) { return f.filename.indexOf("circos__") === 0; });
+      if (circos.length) {
+        // Chord diagrams get the metric-tab layout; any other figure of the
+        // module (e.g. the NBS component heatmap) is shown above them as rows.
+        var rest = figs.filter(function (f) { return f.filename.indexOf("circos__") !== 0; });
+        figPanel = (rest.length ? renderFigureRows(rest) : "") + renderCircosFigures(circos);
       } else {
         // Two-level layouts, tried in order: connectivity metric-first, then
         // power/spectral measure-first (Absolute / Relative / Delta-referenced →
@@ -545,7 +551,19 @@
     var isSensor = (domain === SENSOR_DOMAIN);
     var domainSub = isSensor ? (paradigmGroup(paradigm) || "") : paradigmLabel(paradigm);
     setBreadcrumb(analyticsCrumbs(src, isSensor ? [domain] : [paradigmLabel(paradigm), domain]));
-    clearSourceSelector();
+    // Reconstruction toggle (Shell / Cartesian …) when more than one analytics
+    // source has data in this domain — the same control as the analysis page.
+    var domainSources = M.sources.filter(function (s) {
+      return ordered.some(function (o) { return analysisHasData(M.paradigms[paradigm][o.name], s); });
+    });
+    if (domainSources.length > 1) {
+      renderSourceSelector(domainSources, src, function (newSrc) {
+        location.hash = "#/domain/" + encodeURIComponent(newSrc) + "/" +
+          encodeURIComponent(paradigm) + "/" + encodeURIComponent(domain);
+      });
+    } else {
+      clearSourceSelector();
+    }
 
     var html = '<h2 class="section-header">' + escapeHtml(domain) +
       (domainSub ? ' <span class="domain-sub">' + escapeHtml(domainSub) + '</span>' : "") + '</h2>';
@@ -620,11 +638,11 @@
 
   /* ── Localization Pages ── */
   /* Treatment-group helpers (shared by the localization pages) */
-  var TX_GROUP_ORDER = ["WT_VEH", "KO_VEH", "KO_HD_ICV", "KO_HD_IV", "KO_LD_IV_ICV"];
-  var TX_GROUP_LABELS = {
-    "WT_VEH": "WT Vehicle", "KO_VEH": "KO Vehicle",
-    "KO_HD_ICV": "KO HD-ICV", "KO_HD_IV": "KO HD-IV", "KO_LD_IV_ICV": "KO LD-IV+ICV",
-  };
+  // Group ids -> readable labels + listing order come from the study YAML
+  // (`groups:` / `group_order:`) via the manifest; unknown ids fall back to
+  // underscore-to-space formatting in alphabetical order.
+  var TX_GROUP_ORDER = (M && M.group_order) || [];
+  var TX_GROUP_LABELS = (M && M.group_labels) || {};
   function formatGroup(g) {
     if (!g) return "Unknown";
     return TX_GROUP_LABELS[g] || g.replace(/_/g, " ");
@@ -824,29 +842,75 @@
     var q = query.toLowerCase();
     var results = [];
 
+    var links = [];   // analyses / tables / subjects / QC pages matching the query
+    function hit(text) { return text && String(text).toLowerCase().includes(q); }
+    function stripHtml(html) { var d = document.createElement("div"); d.innerHTML = html || ""; return d.textContent || ""; }
+
     for (var paradigm of Object.keys(M.paradigms)) {
       var analyses = M.paradigms[paradigm];
       for (var analysis of Object.keys(analyses)) {
         var data = analyses[analysis];
+        var meta = data.meta || {};
+        var label = analysisLabel(paradigm, analysis);
+        var analysisHit = hit(paradigm) || hit(paradigmLabel(paradigm)) || hit(analysis) ||
+          hit(formatName(analysis)) || hit(label) || hit(meta.display_name) ||
+          hit(meta.description) || hit(meta.domain) || hit(stripHtml(data.summary));
+        var firstSrc = Object.keys(data.figures)[0] || Object.keys(data.tables)[0] || M.sources[0] || "";
+        var href = "#/analytics/" + encodeURIComponent(firstSrc) + "/" +
+          encodeURIComponent(paradigm) + "/" + encodeURIComponent(analysis);
+        if (analysisHit) {
+          links.push({ kind: "Analysis", label: label + " (" + paradigmLabel(paradigm) + ")", href: href,
+                       sub: meta.description || "" });
+        }
         for (var source of Object.keys(data.figures)) {
           var figs = data.figures[source];
           for (var fig of figs) {
-            if (fig.filename.toLowerCase().includes(q) ||
-                paradigm.toLowerCase().includes(q) ||
-                analysis.toLowerCase().includes(q) ||
-                formatName(analysis).toLowerCase().includes(q)) {
+            if (analysisHit || hit(fig.filename) || hit(formatFigureTitle(fig.filename))) {
               results.push({ type: "figure", paradigm: paradigm, analysis: analysis, source: source, item: fig });
             }
           }
+        }
+        for (var tsrc of Object.keys(data.tables)) {
+          data.tables[tsrc].forEach(function (t) {
+            if (hit(t.filename) || hit(formatTableFilename(t.filename))) {
+              links.push({ kind: "Table", label: formatTableFilename(t.filename) + " — " + label,
+                           href: href, sub: t.filename });
+            }
+          });
+        }
+      }
+    }
+    for (var locSrc of Object.keys(M.localization || {})) {
+      var loc = M.localization[locSrc];
+      var encSrc = encodeURIComponent(locSrc);
+      if (hit(locSrc) || hit("localization") || hit("qc")) {
+        links.push({ kind: "Localization", label: locSrc + " — QC dashboard", href: "#/localization/qc/" + encSrc, sub: "" });
+      }
+      var subjMeta = loc.subject_meta || {};
+      for (var subj of Object.keys(loc.subjects || {})) {
+        var sm = subjMeta[subj] || {};
+        var outl = (sm.outliers || []).join(", ");
+        if (hit(subj) || hit(sm.group) || hit(formatGroup(sm.group)) || (outl && hit("outlier")) || hit(outl)) {
+          links.push({ kind: "Subject", label: subj + (sm.group ? " · " + formatGroup(sm.group) : ""),
+                       href: "#/localization/subjects/" + encSrc,
+                       sub: outl ? "outlier: " + outl : locSrc });
         }
       }
     }
 
     var html = '<h2 class="section-header">Search: "' + escapeHtml(query) + '"</h2>';
-    html += '<p class="search-results-header">' + results.length + ' result(s)</p>';
+    html += '<p class="search-results-header">' + links.length + ' page(s), ' + results.length + ' figure(s)</p>';
 
+    if (links.length > 0) {
+      html += '<ul class="search-links">';
+      links.slice(0, 200).forEach(function (l) {
+        html += '<li><a href="' + l.href + '"><span class="search-kind">' + escapeHtml(l.kind) + '</span> ' +
+          escapeHtml(l.label) + '</a>' + (l.sub ? ' <span class="search-sub">' + escapeHtml(l.sub) + '</span>' : "") + '</li>';
+      });
+      html += '</ul>';
+    }
     if (results.length > 0) {
-      var figItems = results.filter(function (r) { return r.type === "figure"; }).map(function (r) { return r.item; });
+      var figItems = results.map(function (r) { return r.item; });
       html += renderFigureGrid(figItems, PAGE_SIZE);
     }
 
@@ -1274,6 +1338,7 @@
   }
 
   function circosContrastLabel(name) {
+    if (M && M.contrast_labels && M.contrast_labels[name]) return M.contrast_labels[name];
     return name.split("_").map(function (t) {
       var l = t.toLowerCase();
       if (CONTRAST_UPPER[l]) return CONTRAST_UPPER[l];
@@ -1462,12 +1527,16 @@
 
     // Build table header — hide grouped columns since they appear as sub-headers
     var groupColIndices = groupCols.map(function (gc) { return gc.idx; });
-    var html = "<table><thead><tr>";
+    var html = '<table class="sortable"><thead><tr>';
     for (var ci = 0; ci < headers.length; ci++) {
       if (hideCols[ci] || groupColIndices.indexOf(ci) >= 0) continue;
       html += '<th>' + escapeHtml(formatColumnHeader(headers[ci])) + '<span class="sort-indicator"></span></th>';
     }
-    html += "</tr></thead><tbody>";
+    html += "</tr></thead>";
+    // Tablesort sorts each <tbody> independently and leaves single-row bodies
+    // alone, so every group header goes in its own body and each group's data
+    // rows in the next one: sorting reorders rows within a group only.
+    html += "<tbody>";
 
     var sigIdx = headers.findIndex(function (h) {
       return h.toLowerCase() === "significant";
@@ -1497,8 +1566,9 @@
           }
           var formattedVal = gc.formatter(val);
           var level = gi === 0 ? "group-header-primary" : gi === 1 ? "group-header-secondary" : "group-header-tertiary";
-          html += '<tr class="' + level + '"><td colspan="' + dataColCount + '">' +
-            escapeHtml(gc.label + ": " + formattedVal) + '</td></tr>';
+          html += '</tbody><tbody class="group-headers"><tr class="' + level + '" data-sort-method="none">' +
+            '<td colspan="' + dataColCount + '">' + escapeHtml(gc.label + ": " + formattedVal) +
+            '</td></tr></tbody><tbody>';
         }
       }
 
@@ -1511,11 +1581,18 @@
       html += "</tr>";
     }
     html += "</tbody></table>";
+    var note = "";
     if (tbl.truncated) {
-      html += '<p style="padding:8px 10px;font-size:12px;color:var(--text-muted)">Showing ' +
-        rows.length + ' of ' + tbl.total_rows + ' rows</p>';
+      note += 'Showing ' + rows.length + ' of ' + tbl.total_rows + ' rows';
+    }
+    if (tbl.csv) {
+      note += (note ? ' &middot; ' : '') + '<a href="' + escapeHtml(tbl.csv) + '" download>Download full CSV</a>';
+    }
+    if (note) {
+      html += '<p class="table-note" style="padding:8px 10px;font-size:12px;color:var(--text-muted)">' + note + '</p>';
     }
     container.innerHTML = html;
+    initTableSort(container);
   }
 
   /**
@@ -1570,8 +1647,10 @@
       return totalGroups < totalRows;
     }
 
-    // Primary: contrast (or "key" for NBS tables)
-    var contrastIdx = lowerHeaders.indexOf("contrast");
+    // Primary: hypothesis / contrast (or "key" for NBS tables). The native
+    // hypothesis schema names the column `hypothesis`; legacy tables `contrast`.
+    var contrastIdx = lowerHeaders.indexOf("hypothesis");
+    if (contrastIdx < 0) contrastIdx = lowerHeaders.indexOf("contrast");
     if (contrastIdx < 0) contrastIdx = lowerHeaders.indexOf("key");
     if (contrastIdx >= 0 && columnAddsGrouping(contrastIdx)) {
       groups.push({
@@ -1586,6 +1665,7 @@
     var candidates = [
       { names: ["measure_type", "type", "power_type"], label: "Measure Type", formatter: formatMeasureName },
       { names: ["dv", "measure"], label: "Measure", formatter: formatMeasureName },
+      { names: ["kind"], label: "Test", formatter: function (v) { return formatName(v); } },
       { names: ["freq_pair"], label: "Frequency Pair", formatter: function (v) { return formatName(v); } },
       { names: ["parameter"], label: "Parameter", formatter: function (v) { return formatName(v); } },
       { names: ["band"], label: "Band", formatter: function (v) { return formatName(v); } },
@@ -1666,6 +1746,13 @@
       "p_value": "p",
       "q_value": "q (FDR)",
       "hedges_g": "Hedges' g",
+      "hypothesis": "Contrast",
+      "spatial": "ROI / unit",
+      "stat": "Statistic",
+      "effect_size": "Effect size",
+      "effect_size_type": "Effect type",
+      "estimate_lcl": "Estimate (LCL)",
+      "estimate_ucl": "Estimate (UCL)",
       "std_error": "SE",
       "estimated_range_mm": "Range (mm)",
       "mean_t": "Mean |t|",
@@ -1711,7 +1798,8 @@
     var headerLower = header.toLowerCase().replace(/^"|"$/g, "");
 
     // Format contrast names: "30mgkg_vs_Vehicle" → "AUT00206 (30 mg/kg) vs Vehicle"
-    if (headerLower === "contrast") {
+    // (`hypothesis` is the native name of the same column).
+    if (headerLower === "contrast" || headerLower === "hypothesis") {
       return escapeHtml(formatContrast(str));
     }
 
@@ -1756,6 +1844,7 @@
    * "30mgkg_vs_Vehicle" → "AUT00206 (30 mg/kg) vs Vehicle"
    */
   function formatContrast(str) {
+    if (M && M.contrast_labels && M.contrast_labels[str]) return M.contrast_labels[str];
     var parts = str.split("_vs_");
     if (parts.length === 2) {
       return formatGroupName(parts[0]) + " vs " + formatGroupName(parts[1]);
@@ -1767,6 +1856,7 @@
    * Format a group name for display.
    */
   function formatGroupName(name) {
+    if (TX_GROUP_LABELS[name]) return TX_GROUP_LABELS[name];
     var lower = name.toLowerCase();
     if (GROUP_LABELS[lower]) return GROUP_LABELS[lower];
     return name;
@@ -1797,12 +1887,12 @@
     }
 
     // F-statistics, t-statistics
-    if (headerLower.match(/^f$|_f$|group_f|roi_f|interaction_f|^t$|t_ratio|t_value|t_stat|peak_t|mean_t|max_abs_t|cluster_stat/)) {
+    if (headerLower.match(/^f$|_f$|group_f|roi_f|interaction_f|^t$|^stat$|t_ratio|t_value|t_stat|peak_t|peak_stat|mean_stat|mean_t|max_abs_t|cluster_stat/)) {
       return num.toFixed(3);
     }
 
     // Effect sizes (hedges_g, etc.)
-    if (headerLower.match(/hedges_g|mean_hedges_g|max_abs_hedges_g|cohen/)) {
+    if (headerLower.match(/hedges_g|mean_hedges_g|max_abs_hedges_g|cohen|^effect_size$/)) {
       return num.toFixed(3);
     }
 
@@ -1842,9 +1932,13 @@
     return formatName(name);
   }
 
-  function initTableSort() {
+  function initTableSort(root) {
     if (!window.Tablesort) return;
-    document.querySelectorAll(".table-container table").forEach(function (table) {
+    root = root || document;
+    var tables = root.matches && root.matches("table") ? [root] : root.querySelectorAll(".table-container table");
+    tables.forEach(function (table) {
+      if (table.getAttribute("data-tablesort")) return;  // already bound
+      table.setAttribute("data-tablesort", "1");
       new Tablesort(table);
     });
   }

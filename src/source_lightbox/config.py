@@ -49,6 +49,11 @@ class BuildConfig:
     # its paradigms under a shared group header (e.g. resting/vertex -> "Resting"
     # with "ROI-based"/"Vertex-based" sub-labels). None = flat, formatName labels.
     paradigm_display: dict | None = None
+    # Treatment-group display: id -> readable label, and the id order to list
+    # groups in (both from the study YAML's ``groups:`` / ``group_order:``).
+    # None = format the raw id (underscores -> spaces), alphabetical order.
+    group_labels: dict | None = None
+    group_order: list | None = None
     # Optional "back" link rendered in the sidebar header — used when this gallery is
     # one view under a splash/landing page (e.g. report/ + exploratory/ under a shared
     # index.html). None = self-contained build, no link (so a handed-off standalone

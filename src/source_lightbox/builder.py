@@ -12,7 +12,6 @@ import jinja2
 from .config import BuildConfig
 from .manifest import build_manifest
 from .scanner import (
-    AnalyticsScanner,
     LocalizationScanner,
     ResultsScanner,
     ScanResult,
@@ -45,37 +44,33 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
         _merge_scan(scan, partial)
 
     if config.analytics_dir:
-        _log(f"  Analytics: {config.analytics_dir}")
-        scanner = AnalyticsScanner(config.analytics_dir)
-        partial = scanner.scan()
-        _merge_scan(scan, partial)
+        # The analytics working tree is only consulted for the per-subject
+        # connectivity edge CSVs the circos average their chords from; the
+        # Summary tab is a digest generated from the published tables.
+        _log(f"  Analytics (edge CSVs for circos): {config.analytics_dir}")
 
     # Drop excluded analyses (e.g. the combined network aliases, superseded by the
-    # split graph+nbs modules) from every scan list — figures, tables, AND
-    # summaries — so they vanish from the manifest, nav, and rendered figures. Also
-    # match on paradigm to clear a stray top-level alias paradigm dir.
+    # split graph+nbs modules) from every scan list — figures AND tables — so they
+    # vanish from the manifest, nav, and rendered figures. Also match on paradigm
+    # to clear a stray top-level alias paradigm dir.
     excl = set(config.exclude_analyses or [])
     if excl:
         def _keep(e):
             return e.analysis not in excl and getattr(e, "paradigm", None) not in excl
-        n0 = len(scan.figures) + len(scan.tables) + len(scan.summaries)
+        n0 = len(scan.figures) + len(scan.tables)
         scan.figures = [e for e in scan.figures if _keep(e)]
         scan.tables = [e for e in scan.tables if _keep(e)]
-        scan.summaries = [e for e in scan.summaries if _keep(e)]
-        n_drop = n0 - (len(scan.figures) + len(scan.tables) + len(scan.summaries))
+        n_drop = n0 - (len(scan.figures) + len(scan.tables))
         if n_drop:
             _log(f"  Excluded {n_drop} entries from {sorted(excl)}")
 
-    _log(
-        f"  Found: {len(scan.figures)} figures, {len(scan.tables)} tables, "
-        f"{len(scan.summaries)} summaries"
-    )
+    _log(f"  Found: {len(scan.figures)} figures, {len(scan.tables)} tables")
 
     # 2. Prepare output directory. Rendered analytics figures are regenerated
     #    every build, so clear stale ones (and their thumbnails) to avoid orphans
     #    from a prior run. Localization figures are stable and kept.
     out.mkdir(parents=True, exist_ok=True)
-    for sub in ("figures/analytics", "figures/thumbs/analytics", "qc"):
+    for sub in ("figures/analytics", "figures/thumbs/analytics", "qc", "tables"):
         shutil.rmtree(out / sub, ignore_errors=True)
 
     # 2b. Render standardized figures from tables (staged, then treated like any
@@ -85,8 +80,10 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
         _log("Rendering figures from tables...")
         from .render import render_table_figures
 
+        # roi_categories may be None: the worker then auto-picks the bundled
+        # atlas file whose ROI names match the table (as circos does).
         brain = None
-        if config.brain_render and config.roi_categories:
+        if config.brain_render:
             brain = {
                 "categories": config.roi_categories,
                 "contrasts": config.contrasts,
@@ -118,6 +115,14 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
         dst = out / "figures" / fig.gallery_rel_path
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(fig.src_path, dst)
+
+    # 3b. Copy tables verbatim so the UI can offer the full CSV (the inline copy
+    #     embedded in the manifest is row-capped for display).
+    _log("Copying tables...")
+    for tbl in scan.tables:
+        dst = out / tbl.gallery_rel_path
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(tbl.src_path, dst)
 
     # 4. Process QC report (a full self-contained HTML page). Namespace by source
     #    slug so multiple localization sources (e.g. ROI + Shell) don't collide.
@@ -154,7 +159,7 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
 
     # 6. Build manifest (tables + summaries are embedded inline)
     _log("Building manifest...")
-    analysis_meta = _read_analysis_meta(config.brain_python)
+    analysis_meta = _read_analysis_meta(config.brain_python, log=_log)
     manifest = build_manifest(
         scan, config.title, max_table_rows=config.max_table_rows,
         contrast_labels=config.contrast_labels,
@@ -162,6 +167,8 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
         contrast_meta=config.contrast_meta,
         analysis_meta=analysis_meta,
         paradigm_display=config.paradigm_display,
+        group_labels=config.group_labels,
+        group_order=config.group_order,
     )
     manifest_json = json.dumps(manifest, indent=2)
     data_dir = out / "data"
@@ -189,14 +196,15 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
     return out
 
 
-def _read_analysis_meta(python: str | None) -> dict:
+def _read_analysis_meta(python: str | None, log=lambda *a, **k: None) -> dict:
     """Read source-analytics' ANALYSIS_METADATA (domain / supplements / …).
 
     The gallery groups analyses by ``domain`` and nests each secondary under the
     primary it ``supplements``. The single source of truth lives in
     source-analytics, so we read it from that interpreter (same subprocess
     pattern as the brain-mosaic / circos workers). Best-effort: an empty dict
-    just means the gallery falls back to a flat per-analysis layout.
+    means every analysis lands in the "Other" domain — so the failure is logged
+    loudly rather than swallowed.
     """
     import subprocess
 
@@ -204,7 +212,11 @@ def _read_analysis_meta(python: str | None) -> dict:
     # when the study didn't pin paths.source_analytics_python.
     from .circos import _resolve as _resolve_sa_python
 
-    python = python or str(_resolve_sa_python(None))
+    py = _resolve_sa_python(python)
+    if not py.exists():
+        log(f"  WARNING: analysis metadata unavailable — no source-analytics interpreter "
+            f"at {py}; every analysis will be grouped under 'Other'")
+        return {}
 
     code = (
         "import json; from source_analytics.core import analysis_meta; "
@@ -212,12 +224,14 @@ def _read_analysis_meta(python: str | None) -> dict:
     )
     try:
         out = subprocess.run(
-            [python, "-c", code], capture_output=True, text=True, timeout=60
+            [str(py), "-c", code], capture_output=True, text=True, timeout=60
         )
         if out.returncode == 0 and out.stdout.strip():
             return json.loads(out.stdout.strip().splitlines()[-1])
-    except Exception:  # noqa: BLE001
-        pass
+        log("  WARNING: analysis metadata unavailable — source-analytics import failed: "
+            f"{out.stderr.strip()[-300:]}")
+    except Exception as exc:  # noqa: BLE001
+        log(f"  WARNING: analysis metadata unavailable: {exc}")
     return {}
 
 
@@ -225,12 +239,11 @@ def _merge_scan(target: ScanResult, source: ScanResult):
     """Merge source scan results into target."""
     target.figures.extend(source.figures)
     target.tables.extend(source.tables)
-    target.summaries.extend(source.summaries)
     target.qc_entries.extend(source.qc_entries)
 
 
 def _render_html(out: Path, manifest_json: str, title: str = "Source Analysis Gallery",
-                 home_link: str | None = None, home_label: str = "Overview"):
+                 home_link: str | None = None, home_label: str = "Home"):
     """Render the index.html from the Jinja2 template."""
     template_dir = Path(__file__).parent / "templates"
     env = jinja2.Environment(
