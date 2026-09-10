@@ -23,36 +23,20 @@ json-args keys:
   contrasts        list of {name, group_a, group_b}
   labels           {hypothesis_name: readable label}
   metrics          connectivity metric columns to draw (default [imag_coherence])
-  atlas            atlas name for roi_categories (default "allen")
+  categories       the study's category map (a mapping or YAML path); null = the
+                   atlas's own file, then a best-overlap guess (_worker_atlas.py)
+  atlas            the study's atlas (pipeline.atlas), used when categories is null
   alpha            component-p threshold (default 0.05)
 """
 
 from __future__ import annotations
 
-import glob
 import json
 import sys
 from pathlib import Path
 
-
-def _pick_roi_categories(atlas: str, edge_rois: set):
-    """The bundled roi_categories.yaml whose ROI names best match the edges
-    (the atlas ships several granularities; only one matches a given study)."""
-    import yaml
-    from source_analytics.atlas import find_atlas_dir
-
-    best, best_overlap = None, 0
-    root = Path(find_atlas_dir(atlas))
-    for path in glob.glob(str(root / "**" / "roi_categories.yaml"), recursive=True):
-        try:
-            data = yaml.safe_load(open(path))
-            rc = data.get("roi_categories", data) if isinstance(data, dict) else data
-            overlap = len({r for v in rc.values() for r in v} & edge_rois)
-        except Exception:  # noqa: BLE001
-            continue
-        if overlap > best_overlap:
-            best, best_overlap = rc, overlap
-    return best
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # _worker_atlas sits beside this script
+from _worker_atlas import members, resolve_categories  # noqa: E402
 
 
 def main() -> None:
@@ -83,11 +67,17 @@ def main() -> None:
         return
 
     edge_rois = set(edges["roi1"]) | set(edges["roi2"])
-    roi_categories = _pick_roi_categories(args.get("atlas", "allen"), edge_rois)
+    roi_categories, source = resolve_categories(args.get("categories"), args.get("atlas"), edge_rois)
     if not roi_categories:
-        sys.stderr.write("no bundled roi_categories.yaml matches the edge ROIs\n")
+        sys.stderr.write("no roi_categories fit the edge ROIs (none passed, and no atlas "
+                         "category file matches)\n")
         print(json.dumps([]))
         return
+    missing = edge_rois - members(roi_categories)
+    if missing:
+        # build_roi_matrix keeps only categorised ROIs, so these would vanish silently.
+        sys.stderr.write(f"roi_categories from {source} leave {len(missing)} edge ROIs out of "
+                         f"the circos: {', '.join(sorted(missing))}\n")
 
     metrics = args.get("metrics") or ["imag_coherence"]
     labels = args.get("labels") or {}

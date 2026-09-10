@@ -217,6 +217,9 @@ def build(
     cfg_exclude = None
     # Treatment-group display names / order (from --config `groups:`).
     group_labels = group_order = None
+    # The study's atlas (from --config `pipeline.atlas`): the render workers categorise
+    # and draw with its own files instead of defaulting to allen32.
+    atlas = None
 
     # If --config provided, read paths from unified study.yaml
     if config_file is not None:
@@ -317,11 +320,19 @@ def build(
                 if isinstance(p, dict) and p.get("display")
             } or None
         cfg_exclude = study_cfg.get("exclude_analyses")
-        # ROI categories YAML: explicit path, else conventional file beside config.
+        # ROI categories: an explicit YAML path, else the study's own inline map (the one
+        # source-analytics analysed with; a profile's narrowing for a profile build), else
+        # the conventional file beside the config. Left None, the render workers fall
+        # back to the study atlas's own category file.
         if roi_categories is None:
             cfg_cats = paths.get("roi_categories")
+            prof_block = study_cfg.get(str(profile)) if profile else None
+            study_cats = prof_block.get("roi_categories") if isinstance(prof_block, dict) else None
+            study_cats = study_cats or study_cfg.get("roi_categories")
             if cfg_cats:
                 roi_categories = _resolve(cfg_cats, "")
+            elif isinstance(study_cats, dict) and study_cats:
+                roi_categories = {cat: list(rois) for cat, rois in study_cats.items()}
             else:
                 default_cats = config_dir / "allen_roi_categories_proposed.yaml"
                 if default_cats.is_file():
@@ -335,6 +346,7 @@ def build(
                                f"{brain_python} (mosaics, circos and analysis metadata "
                                "will be unavailable)", err=True)
         group_labels, group_order = study_group_display(study_cfg)
+        atlas = (study_cfg.get("pipeline") or {}).get("atlas") or None
 
     if title is None:
         title = "Source Analysis Gallery"
@@ -387,6 +399,7 @@ def build(
         brain_render=brain_render,
         brain_python=brain_python,
         roi_categories=roi_categories,
+        atlas=atlas,
         contrasts=contrasts,
         contrast_labels=contrast_labels,
         contrast_groups=contrast_groups,
