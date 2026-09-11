@@ -35,7 +35,8 @@ class BuildConfig:
     # Anatomy-aware ROI brain mosaics (delegated to source-analytics).
     brain_render: bool = True
     brain_python: str | None = None       # path to source-analytics venv python
-    roi_categories: str | None = None     # YAML with top-level roi_categories:
+    roi_categories: str | dict | None = None  # YAML path, or the study's inline roi_categories: map
+    atlas: str | None = None              # the study's pipeline.atlas (categories + mosaic labels)
     contrasts: list[str] | None = None    # study contrasts to render (None = all)
     contrast_labels: dict | None = None   # contrast name -> readable label
     contrast_groups: dict | None = None   # contrast name -> tier/group label

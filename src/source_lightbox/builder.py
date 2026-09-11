@@ -80,12 +80,13 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
         _log("Rendering figures from tables...")
         from .render import render_table_figures
 
-        # roi_categories may be None: the worker then auto-picks the bundled
-        # atlas file whose ROI names match the table (as circos does).
+        # roi_categories is the study's map (a path or an inline mapping) or None, in
+        # which case the workers use the study atlas's own category file.
         brain = None
         if config.brain_render:
             brain = {
                 "categories": config.roi_categories,
+                "atlas": config.atlas,
                 "contrasts": config.contrasts,
                 "labels": config.contrast_labels,
                 "python": config.brain_python,
@@ -99,6 +100,8 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
                 "contrasts": config.contrast_pairs,
                 "labels": config.contrast_labels,
                 "metrics": config.circos_metrics,
+                "categories": config.roi_categories,
+                "atlas": config.atlas,
                 "python": config.brain_python,
             }
 

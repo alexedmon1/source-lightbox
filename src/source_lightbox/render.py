@@ -728,6 +728,7 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
                         edges_csv, sub_tbl.src_path, dest, circos["contrasts"],
                         metrics=circos.get("metrics"),
                         labels=circos.get("labels"), python_path=circos.get("python"), log=log,
+                        categories=circos.get("categories"), atlas=circos.get("atlas"),
                     )
                     for path in paths:
                         figures.append(FigureEntry(
@@ -747,6 +748,7 @@ def render_table_figures(tables, staging_dir, dpi: int = 150, log=lambda *a, **k
                     contrasts=brain.get("contrasts"),
                     labels=brain.get("labels"),
                     power_type=brain.get("power_type", "relative"),
+                    atlas=brain.get("atlas"),
                     python_path=brain.get("python"),
                     log=log,
                 )

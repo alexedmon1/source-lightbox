@@ -80,7 +80,7 @@ paths:
     - {path: ./localization/rest_roi,   label: "Allen ROI"}
     - {path: ./localization/rest_shell, label: "Shell"}
   # optional:
-  roi_categories: ./allen_roi_categories_proposed.yaml   # for brain mosaics
+  roi_categories: ./allen_roi_categories_proposed.yaml   # optional override; default = the study's roi_categories: map
   source_analytics_python: ~/sandbox/source-analytics/.venv/bin/python   # ~ is expanded
 
 # groups drive the treatment-group chips / labels on the Localization pages
@@ -95,6 +95,11 @@ contrasts:
      group_a: KO_HD_ICV, group_b: KO_VEH}
 
 circos_metrics: [imag_coherence, dwpli, pli, aec, coherence]   # connectivity chords
+
+# the atlas the ROI data were extracted with (the source-analytics `pipeline:` block):
+# brain mosaics and circos use its own parcels and categories
+pipeline: {atlas: allen26}
+roi_categories: {...}               # the study's own category map, if it declares one
 ```
 
 Paths are resolved relative to the config file. `results` and `localizations`
@@ -148,25 +153,34 @@ the gallery as sortable CSVs. To add a figure type, append a renderer to
 ### Brain mosaics and connectivity circos (optional, anatomy-aware)
 
 Two module types get a richer figure than a heatmap, delegated to
-`source-analytics` (its bundled Allen atlas) via a subprocess to its venv — so
+`source-analytics` (its atlas data) via a subprocess to its venv — so
 source-lightbox itself stays lightweight. If that interpreter isn't found, both
 fall back to a heatmap.
 
 - **Brain mosaics** — ROI modules with a `*_posthoc_roi` table get ROI effect
   sizes painted on mouse-brain anatomy, one mosaic per `(contrast, band)` with
   ≥1 FDR-significant ROI (aperiodic tables facet on `dv` — exponent / offset —
-  instead of band). `paths.roi_categories` is optional: without it the bundled
-  atlas file whose ROI names match the table is used.
+  instead of band). The mosaics are drawn on the study's atlas (`pipeline.atlas`)
+  when source-analytics supports it (the release with `resolve_atlas`); an older
+  one draws allen32, and the build warns if that leaves the study's parcels blank.
 - **Connectivity circos** — NBS modules (`roi_nbs`) with a
   `*_subnetwork_edges.csv` table (written by `source-analytics` next to
   `roi_nbs_hypotheses.csv`; it lists the edges of every NBS component) get
-  significance chord diagrams (32 ROIs grouped by anatomical region) alongside
+  significance chord diagrams (the study's ROIs, grouped by its categories) alongside
   the NBS component heatmap, one per `circos_metrics` entry × contrast × band
   with an FDR-significant subnetwork. The chords are group-mean differences
   from `roi_connectivity`'s per-subject edge CSV under `paths.analytics`.
 
+**ROI categories**, first match wins: `--roi-categories` / `paths.roi_categories`;
+the study's own `roi_categories:` map (a profile's narrowed map when building a
+profile subtree); the atlas's own category file; and only then a best-overlap
+guess across the atlas data. The guess used to be the only route and could see
+only files named exactly `roi_categories.yaml`, which for allen26 data picked
+allen32's partition and dropped six parcels from every circos. ROIs the chosen
+categories do not cover are now reported in the build log instead of vanishing.
+
 Both are curated by the config (`contrasts:` / `hypotheses:`, `circos_metrics:`,
-`paths.roi_categories`, `paths.source_analytics_python`). Override on the CLI with
+`pipeline.atlas`, `roi_categories:`, `paths.source_analytics_python`). Override on the CLI with
 `--roi-categories`, `--brain-python`, or `--no-brain`. If the source-analytics
 interpreter is missing or cannot import, the build prints a warning and falls
 back to heatmaps (and groups every analysis under "Other", since the domain

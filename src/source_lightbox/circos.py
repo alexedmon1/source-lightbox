@@ -35,7 +35,7 @@ def circos_available(python_path=None) -> bool:
 
 
 def render_circos(edges_csv, subnetwork_csv, out_dir, contrasts, *,
-                  metrics=None, labels=None, alpha=0.05,
+                  metrics=None, labels=None, alpha=0.05, categories=None, atlas=None,
                   python_path=None, log=lambda *a, **k: None):
     """Render one significance circos per metric × hypothesis × band that has an
     FDR-significant NBS subnetwork.
@@ -55,6 +55,11 @@ def render_circos(edges_csv, subnetwork_csv, out_dir, contrasts, *,
         "metrics": metrics or ["imag_coherence"],
         "labels": labels,
         "alpha": alpha,
+        # The study's own category map and atlas: without them the worker could only
+        # guess, and the guess picked allen32's partition for allen26 data.
+        "categories": (categories if isinstance(categories, dict)
+                       else str(categories) if categories else None),
+        "atlas": atlas,
     }
     proc = subprocess.run(
         [str(py), str(_WORKER), json.dumps(payload)],

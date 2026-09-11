@@ -42,7 +42,7 @@ def brain_available(python_path: str | Path | None = None) -> bool:
 def render_roi_mosaics(
     table_path: str | Path,
     *,
-    categories: str | Path | None,
+    categories: str | Path | dict | None,
     out_dir: str | Path,
     analysis_name: str,
     contrasts: list[str] | None = None,
@@ -50,19 +50,23 @@ def render_roi_mosaics(
     power_type: str | None = "relative",
     alpha: float = 0.05,
     python_path: str | Path | None = None,
+    atlas: str | None = None,
     log=lambda *a, **k: None,
 ) -> list[Path]:
     """Render brain mosaics for one ROI posthoc table via source-analytics.
 
-    ``categories`` may be None: the worker then auto-picks the bundled atlas
-    ``roi_categories.yaml`` whose ROI names match the table (as circos does).
+    ``categories`` is the study's map (a mapping or YAML path) or None, in which
+    case the worker uses ``atlas``'s own category file. ``atlas`` (the study's
+    ``pipeline.atlas``) also selects the label volume the mosaics are drawn on.
 
     Returns the list of written PNG paths (empty on any failure — never raises).
     """
     py = resolve_python(python_path)
     payload = {
         "csv": str(table_path),
-        "categories": str(categories) if categories else None,
+        "categories": (categories if isinstance(categories, dict)
+                       else str(categories) if categories else None),
+        "atlas": atlas,
         "out_dir": str(out_dir),
         "analysis_name": analysis_name,
         "contrasts": contrasts,

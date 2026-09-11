@@ -13,22 +13,27 @@ json-args keys:
                 (hypothesis, spatial, band, dv, effect_size, p_value, q_value,
                 significant). Legacy alias columns (contrast, roi, power_type,
                 hedges_g, p_fdr) are accepted and mapped to the native names.
-  categories    path to a YAML with a top-level `roi_categories:` mapping, or
-                null to auto-pick the bundled atlas file whose ROI names match.
+  categories    the study's category map: a mapping, a path to a YAML with a
+                top-level `roi_categories:`, or null to use the atlas's own file
+                (then a best-overlap guess). See _worker_atlas.py.
   out_dir       output directory for the mosaics
   analysis_name ANALYSIS_CMAPS key (e.g. "psd", "aperiodic")
   contrasts     list of hypothesis names to keep (None = all)
   power_type    preferred `dv` when the table's dv is a power type (None = all)
   alpha         FDR threshold for the "significant" row (default 0.05)
-  atlas         atlas name for the auto-picked roi_categories (default "allen")
+  atlas         the study's atlas (pipeline.atlas): its own categories when none are
+                passed, and -- with a source-analytics that has resolve_atlas -- its
+                own label volume for the mosaics (default: allen32)
 """
 
 from __future__ import annotations
 
-import glob
 import json
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # _worker_atlas sits beside this script
+from _worker_atlas import members, mosaic_atlas_kwargs, resolve_categories  # noqa: E402
 
 # Legacy hypothesis-CSV alias -> native column (mirrors render._ALIAS_TO_NATIVE).
 _ALIAS_TO_NATIVE = {
@@ -52,30 +57,10 @@ def _to_native(df):
     return df
 
 
-def _pick_roi_categories(atlas: str, rois: set):
-    """The bundled atlas roi_categories.yaml whose ROI names best match ``rois``."""
-    import yaml
-    from source_analytics.atlas import find_atlas_dir
-
-    best, best_overlap = None, 0
-    root = Path(find_atlas_dir(atlas))
-    for path in glob.glob(str(root / "**" / "roi_categories.yaml"), recursive=True):
-        try:
-            data = yaml.safe_load(open(path))
-            rc = data.get("roi_categories", data) if isinstance(data, dict) else data
-            overlap = len({r for v in rc.values() for r in v} & rois)
-        except Exception:  # noqa: BLE001
-            continue
-        if overlap > best_overlap:
-            best, best_overlap = rc, overlap
-    return best
-
-
 def main() -> None:
     args = json.loads(sys.argv[1])
 
     import pandas as pd
-    import yaml
     from source_analytics.viz.brain_roi import render_posthoc_mosaics
 
     df = _to_native(pd.read_csv(args["csv"]))
@@ -85,15 +70,18 @@ def main() -> None:
             print(json.dumps([]))
             return
 
-    if args.get("categories"):
-        categories = yaml.safe_load(open(args["categories"]))["roi_categories"]
-    else:
-        categories = _pick_roi_categories(args.get("atlas", "allen"),
-                                          set(df["spatial"].dropna().astype(str)))
-        if not categories:
-            sys.stderr.write("no bundled roi_categories.yaml matches the table's ROIs\n")
-            print(json.dumps([]))
-            return
+    atlas = args.get("atlas")
+    table_rois = set(df["spatial"].dropna().astype(str))
+    categories, source = resolve_categories(args.get("categories"), atlas, table_rois)
+    if not categories:
+        sys.stderr.write("no roi_categories fit the table's ROIs (none passed, and no atlas "
+                         "category file matches)\n")
+        print(json.dumps([]))
+        return
+    missing = table_rois - members(categories)
+    if missing and source == "a best-overlap guess":
+        sys.stderr.write(f"roi_categories from {source} leave {len(missing)} of the table's "
+                         f"ROIs uncategorised: {', '.join(sorted(missing))}\n")
     out_dir = Path(args["out_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)
     alpha = float(args.get("alpha", 0.05))
@@ -152,6 +140,9 @@ def main() -> None:
         facet_cols.append("dv")
     p_col = "p_value" if "p_value" in df.columns else None
     q_col = "q_value" if "q_value" in df.columns else None
+    mosaic_kw, warning = mosaic_atlas_kwargs(atlas, render_posthoc_mosaics)
+    if warning:
+        sys.stderr.write(warning + "\n")
     paths = render_posthoc_mosaics(
         filtered,
         categories,
@@ -165,6 +156,7 @@ def main() -> None:
         facet_cols=facet_cols,
         colorbar_label="Hedges' g",
         alpha=alpha,
+        **mosaic_kw,
     )
     try:
         filtered.unlink()
