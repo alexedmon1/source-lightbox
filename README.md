@@ -80,6 +80,24 @@ Two cases are called out in the card rather than left to be noticed:
   measurements. source-analytics refuses such a cohort outright; the gallery
   shows it, since a frozen study may already contain one.
 
+### Each analysis says what produced its tables
+
+source-analytics v0.8.2+ writes a `provenance.json` beside each analysis's
+tables. The gallery reads it and shows it on the analysis page:
+
+- **Monte Carlo parcel caveats appear open**, above the tabs. A parcel the
+  montage cannot separate from its neighbour, or one the run rarely sampled,
+  produces an ordinary-looking table row — there is otherwise nothing in the
+  gallery to distinguish it.
+- **The rest is a collapsed "What produced this" strip** — the localization
+  description (atlas, geometry, inverse, sampling mode), the source-localization
+  and source-analytics versions, the plugin if the analysis came from one, the
+  subject and group counts, and when the run happened.
+
+An older results tree has no such file, and then nothing is shown rather than a
+guess. The record's full subject-id list and lifecycle steps are dropped on the
+way in: the manifest is inlined into `index.html`, once per analysis.
+
 ### The retired vertex analyses
 
 The vertex analyses left source-analytics in v0.8.0 for the unmaintained

@@ -1,7 +1,8 @@
-"""What built a localization run, and the analyses that no longer exist."""
+"""What built a localization run and its analyses, and the analyses that are gone."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -230,3 +231,114 @@ def _analyses_in(manifest: dict) -> set:
         for paradigm in (manifest.get("paradigms") or {}).values()
         for analysis in paradigm
     }
+
+
+class TestAnalyticsProvenance:
+    """source-analytics' provenance.json, surfaced under Analytics."""
+
+    RECORD = {
+        "schema": 1,
+        "written": "2026-09-18T14:01:36-04:00",
+        "analysis": "roi_psd",
+        "paradigm": "resting",
+        "source_analytics": {"version": "v0.8.2", "git_describe": "v0.8.2"},
+        "steps": ["aggregate", "process", "setup"],
+        "subjects": {"n": 3, "groups": {"KO": 1, "WT": 2},
+                     "ids": ["sub-901", "sub-902", "sub-903"]},
+        "localization": {
+            "n_with_manifest": 3, "n_unrecorded": 0,
+            "description": "ellipsoid_surface_anatomical, allen26, Monte Carlo (K=100)",
+            "version": "0.5.1", "atlas": "allen26",
+            "source_sampling": "monte_carlo", "inverse_method": "sLORETA",
+        },
+        "plugins": {"vertex": {"version": "0.1.0", "provides_this_analysis": True},
+                    "other": {"version": "2.0"}},
+        "parcel_caveats": {"Thalamus": "sampled in 31% of draws"},
+    }
+
+    @staticmethod
+    def _results(root, record=None, analysis="roi_psd"):
+        d = root / "tables" / "resting" / analysis
+        d.mkdir(parents=True)
+        (d / f"{analysis}_hypotheses.csv").write_text("roi,hedges_g\nAuditory_L,0.4\n")
+        if record is not None:
+            (d / "provenance.json").write_text(json.dumps(record))
+        return root
+
+    def test_scanner_reads_it(self, tmp_path):
+        from source_lightbox.scanner import ResultsScanner
+
+        res = ResultsScanner(self._results(tmp_path, self.RECORD), "R").scan()
+        assert res.provenance[("resting", "roi_psd")]["analysis"] == "roi_psd"
+
+    def test_scanner_tolerates_absence(self, tmp_path):
+        from source_lightbox.scanner import ResultsScanner
+
+        res = ResultsScanner(self._results(tmp_path, None), "R").scan()
+        assert res.provenance == {}
+
+    def test_scanner_tolerates_corruption(self, tmp_path):
+        from source_lightbox.scanner import ResultsScanner
+
+        root = self._results(tmp_path, self.RECORD)
+        (root / "tables" / "resting" / "roi_psd" / "provenance.json").write_text("{ bad")
+        assert ResultsScanner(root, "R").scan().provenance == {}
+
+    def test_provenance_is_not_read_as_a_table(self, tmp_path):
+        from source_lightbox.scanner import ResultsScanner
+
+        res = ResultsScanner(self._results(tmp_path, self.RECORD), "R").scan()
+        assert [t.filename for t in res.tables] == ["roi_psd_hypotheses.csv"]
+
+    def test_trim_keeps_what_is_displayed(self):
+        from source_lightbox.manifest import _trim_provenance
+
+        t = _trim_provenance(self.RECORD)
+        assert t["source_analytics"] == "v0.8.2"
+        assert t["n_subjects"] == 3
+        assert t["groups"] == {"KO": 1, "WT": 2}
+        assert t["localization"]["atlas"] == "allen26"
+        assert t["localization"]["source_sampling"] == "monte_carlo"
+        assert t["parcel_caveats"] == {"Thalamus": "sampled in 31% of draws"}
+
+    def test_trim_drops_what_is_not_displayed(self):
+        """The manifest is inlined into index.html, once per analysis."""
+        from source_lightbox.manifest import _trim_provenance
+
+        blob = json.dumps(_trim_provenance(self.RECORD))
+        assert "sub-901" not in blob, "subject ids are provenance, not display"
+        assert "steps" not in blob
+
+    def test_trim_names_only_the_plugin_that_provided_the_analysis(self):
+        from source_lightbox.manifest import _trim_provenance
+
+        assert _trim_provenance(self.RECORD)["plugin"] == "vertex 0.1.0"
+
+    def test_trim_omits_plugin_when_the_analysis_is_built_in(self):
+        from source_lightbox.manifest import _trim_provenance
+
+        rec = json.loads(json.dumps(self.RECORD))
+        rec["plugins"] = {"other": {"version": "2.0"}}
+        assert "plugin" not in _trim_provenance(rec)
+
+    def test_trim_omits_caveats_for_a_fixed_grid_run(self):
+        from source_lightbox.manifest import _trim_provenance
+
+        rec = json.loads(json.dumps(self.RECORD))
+        del rec["parcel_caveats"]
+        assert "parcel_caveats" not in _trim_provenance(rec)
+
+    def test_it_reaches_the_built_manifest(self, tmp_path):
+        from source_lightbox.builder import build
+        from source_lightbox.config import BuildConfig, SourceInput
+
+        res = self._results(tmp_path / "results", self.RECORD)
+        self._results(tmp_path / "results", None, analysis="roi_aperiodic")
+        out = tmp_path / "g"
+        build(BuildConfig(localizations=[], results=[SourceInput(path=res, label="R")],
+                          output_dir=out, render_figures=False, brain_render=False,
+                          thumb_workers=1), verbose=False)
+        man = _inline_manifest(out)
+        block = man["paradigms"]["resting"]
+        assert block["roi_psd"]["provenance"]["localization"]["atlas"] == "allen26"
+        assert "provenance" not in block["roi_aperiodic"], "absent must stay absent"

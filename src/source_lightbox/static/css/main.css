@@ -728,6 +728,47 @@ main {
   margin-right: 6px;
 }
 
+/* What produced an analysis's tables (source-analytics provenance.json).
+   The caveat block is open because it changes how a table is read; the
+   provenance detail is collapsed because it is reference. */
+.analysis-warn {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  background: rgba(194, 112, 58, 0.09);
+  border-left: 3px solid #c2703a;
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin: 0 0 14px 0;
+}
+.analysis-warn b { color: var(--text-primary); }
+.analysis-warn ul { margin: 6px 0 0 0; padding-left: 18px; }
+.analysis-warn li { margin-bottom: 3px; }
+
+.analysis-prov {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  background: var(--surface, #f7f8fa);
+  border-left: 3px solid var(--border, #d4d7dd);
+  border-radius: 4px;
+  padding: 8px 14px;
+  margin: 0 0 14px 0;
+}
+.analysis-prov > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-primary);
+  list-style-position: outside;
+}
+.analysis-prov dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 14px;
+  margin: 10px 0 2px 0;
+}
+.analysis-prov dt { opacity: 0.75; white-space: nowrap; }
+.analysis-prov dd { margin: 0; color: var(--text-primary); }
+
 /* Connectivity metric-definitions glossary (collapsible) */
 .metric-glossary {
   font-size: 13px;

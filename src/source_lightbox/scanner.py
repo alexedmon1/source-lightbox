@@ -70,8 +70,10 @@ class ScanResult:
     figures: list[FigureEntry] = field(default_factory=list)
     tables: list[TableEntry] = field(default_factory=list)
     qc_entries: list[QCEntry] = field(default_factory=list)
-    #: source_label -> what source-localization run built it. See RunInfo.
+    #: source_label -> what source-localization run built it. See _read_run.
     runs: dict = field(default_factory=dict)
+    #: (paradigm, analysis) -> source-analytics' provenance.json for those tables.
+    provenance: dict = field(default_factory=dict)
 
 
 def _slugify(text: str) -> str:
@@ -216,6 +218,24 @@ def _is_image(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
 
 
+def _read_provenance(analysis_dir: Path) -> dict | None:
+    """source-analytics' ``provenance.json``, or None when absent/unreadable.
+
+    Written from source-analytics v0.8.2. Records what produced the tables in
+    this directory: the source-analytics version, the plugin that supplied the
+    analysis, the subjects, and the localization settings the cohort shares.
+    Older result trees have none, which the gallery shows as unrecorded.
+    """
+    path = analysis_dir / "provenance.json"
+    if not path.exists():
+        return None
+    try:
+        record = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    return record if isinstance(record, dict) else None
+
+
 class ResultsScanner:
     """Scan a source-analytics results directory (``tables/`` + ``figures/``).
 
@@ -267,6 +287,9 @@ class ResultsScanner:
                     if not analysis_dir.is_dir():
                         continue
                     analysis = analysis_dir.name
+                    record = _read_provenance(analysis_dir)
+                    if record is not None:
+                        result.provenance[(paradigm, analysis)] = record
                     for tbl in sorted(analysis_dir.glob("*.csv")):
                         result.tables.append(
                             TableEntry(

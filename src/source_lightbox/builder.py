@@ -261,6 +261,7 @@ def _merge_scan(target: ScanResult, source: ScanResult):
     target.tables.extend(source.tables)
     target.qc_entries.extend(source.qc_entries)
     target.runs.update(source.runs)
+    target.provenance.update(source.provenance)
 
 
 def _render_html(out: Path, manifest_json: str, title: str = "Source Analysis Gallery",

@@ -433,6 +433,71 @@
     renderAnalysisContent(paradigm, analysis, data, src, sources);
   }
 
+  /* ── What produced these tables ──
+     source-analytics writes provenance.json beside each analysis's tables
+     (v0.8.2+). The Monte Carlo parcel caveats show open, because a parcel the
+     montage cannot separate from its neighbour produces an ordinary-looking
+     table row and there is otherwise nothing to distinguish it. The rest is
+     reference and stays collapsed. Absent for an older results tree, in which
+     case nothing is shown rather than a guess. */
+  function provenanceHtml(prov) {
+    if (!prov) return "";
+    var loc = prov.localization || {};
+    var html = "";
+
+    var caveats = prov.parcel_caveats || {};
+    var names = Object.keys(caveats).sort();
+    if (names.length) {
+      html += '<div class="analysis-warn"><b>' + names.length
+        + (names.length === 1 ? " parcel carries" : " parcels carry")
+        + ' a Monte Carlo caveat</b> — '
+        + (names.length === 1 ? "its individual value is" : "their individual values are")
+        + ' not interpretable on ' + (names.length === 1 ? "its" : "their") + ' own:<ul>';
+      for (var n of names) {
+        html += "<li><b>" + escapeHtml(n) + "</b> — " + escapeHtml(caveats[n]) + "</li>";
+      }
+      html += "</ul></div>";
+    }
+
+    var bits = [];
+    if (loc.description) bits.push(["localization", loc.description]);
+    else {
+      if (loc.atlas) bits.push(["atlas", loc.atlas]);
+      if (loc.inverse_method) bits.push(["inverse", loc.inverse_method]);
+      if (loc.source_sampling) {
+        bits.push(["sampling", loc.source_sampling === "monte_carlo" ? "Monte Carlo" : "fixed grid"]);
+      }
+    }
+    if (loc.version) bits.push(["source-localization", loc.version]);
+    if (prov.source_analytics) bits.push(["source-analytics", prov.source_analytics]);
+    if (prov.plugin) bits.push(["plugin", prov.plugin]);
+    if (prov.n_subjects != null) {
+      var groups = prov.groups || {};
+      var gnames = Object.keys(groups).sort();
+      var detail = gnames.length
+        ? " (" + gnames.map(function (g) { return formatGroup(g) + " " + groups[g]; }).join(", ") + ")"
+        : "";
+      bits.push(["subjects", prov.n_subjects + detail]);
+    }
+    if (loc.n_unrecorded) {
+      bits.push(["not recorded", loc.n_unrecorded + " subject(s) localized before "
+        + "source-localization 0.4.2"]);
+    }
+    if (prov.written) bits.push(["run", String(prov.written).replace("T", " ").slice(0, 16)]);
+    if (!bits.length) return html;
+
+    var lead = loc.description
+      || [loc.atlas, loc.inverse_method].filter(Boolean).join(", ")
+      || "recorded";
+    html += '<details class="analysis-prov"><summary>What produced this — '
+      + escapeHtml(lead) + "</summary><dl>";
+    for (var b of bits) {
+      html += "<dt>" + escapeHtml(b[0]) + "</dt><dd>" + escapeHtml(String(b[1])) + "</dd>";
+    }
+    html += "</dl></details>";
+    return html;
+  }
+
   function renderAnalysisContent(paradigm, analysis, data, source, allSources) {
     var inner = buildAnalysisInner(paradigm, analysis, data, source, allSources, "a");
     var html = '<h2 class="section-header">' + designLabel(paradigm, analysis) + ' — ' + analysisLabel(paradigm, analysis) + '</h2>' + inner.html;
@@ -518,7 +583,7 @@
     // Connectivity-family analyses get a collapsible metric-definitions glossary.
     var glossaryPanel = isConnectivityFamily(analysis) ? renderMetricGlossary() : "";
 
-    var html = aboutPanel + glossaryPanel;
+    var html = aboutPanel + provenanceHtml(data.provenance) + glossaryPanel;
     if (tabs.length === 0) {
       html += '<div class="empty-state"><p>No figures, tables, or summary for this analysis.</p></div>';
     } else {

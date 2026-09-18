@@ -22,6 +22,40 @@ def _read_csv(path: Path) -> dict:
     return {"headers": headers, "rows": rows}
 
 
+def _trim_provenance(record: dict) -> dict:
+    """The parts of source-analytics' provenance.json the gallery shows.
+
+    The file also carries the full subject-id list and the lifecycle steps, which
+    are provenance rather than something a reader of a figure acts on. Keeping
+    the manifest to what is displayed matters because it is inlined into
+    index.html, once per analysis.
+    """
+    loc = record.get("localization") or {}
+    plugins = {name: info for name, info in (record.get("plugins") or {}).items()
+               if isinstance(info, dict) and info.get("provides_this_analysis")}
+    out = {
+        "written": record.get("written"),
+        "source_analytics": (record.get("source_analytics") or {}).get("version"),
+        "n_subjects": (record.get("subjects") or {}).get("n"),
+        "groups": (record.get("subjects") or {}).get("groups") or {},
+        "localization": {
+            "description": loc.get("description"),
+            "version": loc.get("version"),
+            "atlas": loc.get("atlas"),
+            "source_sampling": loc.get("source_sampling"),
+            "inverse_method": loc.get("inverse_method"),
+            "n_unrecorded": loc.get("n_unrecorded") or 0,
+        },
+    }
+    if plugins:
+        out["plugin"] = ", ".join(
+            f"{name} {info.get('version') or '?'}" for name, info in sorted(plugins.items()))
+    caveats = record.get("parcel_caveats") or {}
+    if caveats:
+        out["parcel_caveats"] = caveats
+    return out
+
+
 def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
                    contrast_labels: dict | None = None,
                    contrast_groups: dict | None = None,
@@ -186,6 +220,14 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
                 "about": m.get("about"),
                 "display_name": m.get("display_name"),
             }
+
+            # What produced these tables (source-analytics v0.8.2+). Trimmed to
+            # what a reader acts on: the versions, the cohort, the localization
+            # settings, and any Monte Carlo caveat. Absent for an older run,
+            # which the gallery shows as unrecorded rather than inventing.
+            record = (getattr(scan, "provenance", None) or {}).get((paradigm, analysis))
+            if record:
+                entry["provenance"] = _trim_provenance(record)
 
     # Localization entries grouped by source
     for fig in scan.figures:
