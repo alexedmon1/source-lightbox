@@ -232,6 +232,14 @@ def build_manifest(scan: ScanResult, title: str, max_table_rows: int = 500,
         if qc.report_path:
             manifest["localization"][source]["qc_report"] = f"qc/{_slugify(source)}/qc_report.html"
 
+    # What source-localization run built each pipeline. The gallery shows the
+    # atlas, geometry, inverse and sampling mode, because two galleries that
+    # look identical can be reporting different measurements.
+    for source, run in (getattr(scan, "runs", None) or {}).items():
+        if source not in manifest["localization"]:
+            manifest["localization"][source] = {"subjects": {}, "qc_figures": []}
+        manifest["localization"][source]["run"] = run
+
     # Compute stats
     manifest["stats"] = {
         "total_figures": len(scan.figures),

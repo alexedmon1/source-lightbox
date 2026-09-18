@@ -518,6 +518,21 @@ main {
   color: var(--text-secondary);
 }
 .loc-group-chip b { color: var(--text-primary); }
+
+/* What source-localization run built a pipeline. Sits between the group chips
+   and the action links, so the settings that decide the numbers are read before
+   the figures they produced. */
+.loc-run { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 10px;
+           font-size: 12px; color: var(--text-secondary); }
+.loc-run-item { white-space: nowrap; }
+.loc-run-key { color: var(--text-tertiary, var(--text-secondary)); opacity: 0.75; }
+.loc-run-unknown { font-style: italic; }
+.loc-note, .loc-warn {
+  font-size: 12px; line-height: 1.45; margin-bottom: 10px;
+  padding: 7px 10px; border-radius: 4px; border-left: 3px solid;
+}
+.loc-note { border-color: var(--accent, #4a7fb5); background: var(--bg-subtle, rgba(74,127,181,0.07)); }
+.loc-warn { border-color: #c2703a; background: rgba(194,112,58,0.09); }
 .loc-links { display: flex; gap: 10px; }
 .btn-link {
   font-size: 13px;

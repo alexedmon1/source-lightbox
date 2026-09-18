@@ -60,6 +60,36 @@ The Analytics nav is derived from which sources actually contain figures/tables,
 so a localization-only pipeline never shows up as an empty Analytics folder, and
 a single analytics source renders its paradigms directly with no redundant header.
 
+### Each localization card says what built it
+
+Two galleries can look identical and report different measurements. So each
+localization card shows the settings that decide the numbers — atlas, head
+model, source space, inverse method and **sampling mode** — read from the
+`data/config_resolved.yaml` that source-localization 0.4.2+ writes beside its
+outputs. A pipeline localized before that reads "not recorded" rather than being
+guessed at.
+
+Two cases are called out in the card rather than left to be noticed:
+
+- **Monte Carlo sampling** (`source_sampling: monte_carlo`) averages the ROI
+  operator over many source draws instead of solving one grid, so the pipeline
+  has parcel time series only — there is no vertex-level output for it, by
+  construction.
+- **Subjects that disagree.** If the cohort's subjects differ on any of those
+  settings, the card names which, because pooling them compares different
+  measurements. source-analytics refuses such a cohort outright; the gallery
+  shows it, since a frozen study may already contain one.
+
+### The retired vertex analyses
+
+The vertex analyses left source-analytics in v0.8.0 for the unmaintained
+`source-analytics-vertex` plugin: a vertex map describes one arbitrary source
+placement, and the ROI analyses over Monte Carlo operators replaced them. An
+older results tree still carries their tables and figures, so the gallery
+**skips them** and logs what it skipped, rather than publishing them beside
+current results with nothing to mark them as retired. Pass `--include-retired`
+(or set `include_retired: true` in the study config) to publish them anyway.
+
 ---
 
 ## The config the gallery reads

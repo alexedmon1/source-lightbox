@@ -70,11 +70,77 @@ class ScanResult:
     figures: list[FigureEntry] = field(default_factory=list)
     tables: list[TableEntry] = field(default_factory=list)
     qc_entries: list[QCEntry] = field(default_factory=list)
+    #: source_label -> what source-localization run built it. See RunInfo.
+    runs: dict = field(default_factory=dict)
 
 
 def _slugify(text: str) -> str:
     """Convert a label to a filesystem-safe slug."""
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+
+
+#: Settings that decide the numbers. Two subjects that differ on any of them
+#: were not measured the same way. Mirrors source-analytics' RunManifest.
+_RUN_FIELDS = ("atlas", "bem", "source_space", "sampling", "inverse", "orientation")
+
+
+def _read_run(data_dir: Path) -> dict | None:
+    """The resolved config source-localization 0.4.2+ leaves beside its outputs.
+
+    Returns None when absent — a run from before that, whose outputs cannot say
+    what built them. The gallery shows "not recorded" rather than guessing.
+    """
+    path = data_dir / "config_resolved.yaml"
+    if not path.exists():
+        return None
+    try:
+        import yaml
+
+        with open(path) as f:
+            snapshot = yaml.safe_load(f) or {}
+    except Exception:
+        return None
+
+    cfg = snapshot.get("config") or {}
+    src = cfg.get("source_space") or {}
+    surface = src.get("surface") or {}
+    inverse = cfg.get("inverse") or {}
+    pipeline = cfg.get("pipeline") or {}
+    method = surface.get("method")
+    return {
+        "version": snapshot.get("source_localization_version"),
+        "preset": (cfg.get("provenance") or {}).get("preset"),
+        "atlas": (cfg.get("provenance") or {}).get("atlas"),
+        "bem": pipeline.get("bem_type"),
+        "source_space": (pipeline.get("source_type") or "")
+                        + (f"/{method}" if method else ""),
+        "sampling": src.get("source_sampling") or "fixed",
+        "inverse": inverse.get("method"),
+        "orientation": inverse.get("orientation"),
+    }
+
+
+def _summarise_runs(per_subject: dict) -> dict | None:
+    """Collapse per-subject run info to one description for the source.
+
+    ``mismatched`` lists the settings the subjects disagree on. A gallery that
+    silently showed the first subject's settings for a mixed cohort would be
+    describing a study that was not run.
+    """
+    known = {k: v for k, v in per_subject.items() if v}
+    if not known:
+        return None
+    first = next(iter(known.values()))
+    mismatched = sorted(
+        field for field in _RUN_FIELDS
+        if len({v.get(field) for v in known.values()}) > 1
+    )
+    return {
+        **first,
+        "n_subjects": len(known),
+        "n_unrecorded": len(per_subject) - len(known),
+        "mismatched": mismatched,
+    }
 
 
 class LocalizationScanner:
@@ -86,6 +152,7 @@ class LocalizationScanner:
 
     def scan(self) -> ScanResult:
         result = ScanResult()
+        per_subject: dict = {}
 
         # Per-subject pipeline figures
         deriv = self.path / "derivatives"
@@ -94,6 +161,7 @@ class LocalizationScanner:
                 if not sub_dir.is_dir() or not sub_dir.name.startswith("sub-"):
                     continue
                 sub_id = sub_dir.name
+                per_subject[sub_id] = _read_run(sub_dir / "pipeline" / "data")
                 fig_dir = sub_dir / "pipeline" / "figures"
                 if fig_dir.exists():
                     for fig in sorted(fig_dir.glob("*.png")):
@@ -132,6 +200,10 @@ class LocalizationScanner:
                 qc_entry.report_path = report
             if qc_entry.metrics_path or qc_entry.report_path:
                 result.qc_entries.append(qc_entry)
+
+        run = _summarise_runs(per_subject)
+        if run is not None:
+            result.runs[self.label] = run
 
         return result
 

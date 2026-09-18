@@ -9,7 +9,7 @@ from pathlib import Path
 
 import jinja2
 
-from .config import BuildConfig
+from .config import RETIRED_ANALYSES, BuildConfig
 from .manifest import build_manifest
 from .scanner import (
     LocalizationScanner,
@@ -54,6 +54,23 @@ def build(config: BuildConfig, verbose: bool = True) -> Path:
     # vanish from the manifest, nav, and rendered figures. Also match on paradigm
     # to clear a stray top-level alias paradigm dir.
     excl = set(config.exclude_analyses or [])
+
+    # The retired vertex analyses are dropped first and separately, so that a
+    # study overriding `exclude_analyses:` cannot bring them back by accident.
+    if not config.include_retired:
+        def _retired(e):
+            return (e.analysis in RETIRED_ANALYSES
+                    or getattr(e, "paradigm", None) in RETIRED_ANALYSES)
+        found = sorted({e.analysis for e in (*scan.figures, *scan.tables)
+                        if _retired(e)})
+        if found:
+            scan.figures = [e for e in scan.figures if not _retired(e)]
+            scan.tables = [e for e in scan.tables if not _retired(e)]
+            _log(f"  Skipped retired analyses: {', '.join(found)} — these left "
+                 f"source-analytics in v0.8.0 for the unmaintained "
+                 f"source-analytics-vertex plugin. Pass --include-retired to "
+                 f"publish them anyway.")
+
     if excl:
         def _keep(e):
             return e.analysis not in excl and getattr(e, "paradigm", None) not in excl
@@ -243,6 +260,7 @@ def _merge_scan(target: ScanResult, source: ScanResult):
     target.figures.extend(source.figures)
     target.tables.extend(source.tables)
     target.qc_entries.extend(source.qc_entries)
+    target.runs.update(source.runs)
 
 
 def _render_html(out: Path, manifest_json: str, title: str = "Source Analysis Gallery",

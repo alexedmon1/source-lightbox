@@ -663,6 +663,44 @@
     return m && m.outliers && m.outliers.length ? m.outliers : null;
   }
 
+  /* ── What source-localization run built a pipeline ──
+     Two galleries can look identical and report different measurements, so the
+     settings that decide the numbers are shown rather than left in a YAML file.
+     Monte Carlo is called out because it is ROI-only by construction. */
+  function runProvenanceHtml(run) {
+    if (!run) return '<div class="loc-run loc-run-unknown">Run settings not recorded '
+      + '(localized before source-localization 0.4.2)</div>';
+    var bits = [];
+    if (run.atlas) bits.push(["atlas", run.atlas]);
+    if (run.bem) bits.push(["head model", run.bem]);
+    if (run.source_space) bits.push(["sources", run.source_space]);
+    if (run.inverse) bits.push(["inverse", run.inverse + (run.orientation ? " (" + run.orientation + ")" : "")]);
+    bits.push(["sampling", run.sampling === "monte_carlo" ? "Monte Carlo" : "fixed grid"]);
+
+    var html = '<div class="loc-run">';
+    for (var b of bits) {
+      html += '<span class="loc-run-item"><span class="loc-run-key">' + escapeHtml(b[0])
+        + '</span> ' + escapeHtml(String(b[1])) + '</span>';
+    }
+    html += '</div>';
+    if (run.sampling === "monte_carlo") {
+      html += '<div class="loc-note">Monte Carlo sampling: the ROI operator is averaged '
+        + 'over many source draws, so this pipeline has parcel time series only — no '
+        + 'vertex-level output exists for it.</div>';
+    }
+    if (run.mismatched && run.mismatched.length) {
+      html += '<div class="loc-warn">Subjects disagree on: '
+        + escapeHtml(run.mismatched.join(", "))
+        + '. These were not all localized the same way, so pooling them compares '
+        + 'different measurements.</div>';
+    }
+    if (run.n_unrecorded) {
+      html += '<div class="loc-warn">' + run.n_unrecorded + ' subject(s) recorded no run '
+        + 'settings, so they cannot be checked against the rest.</div>';
+    }
+    return html;
+  }
+
   function renderLocalizationHome() {
     setBreadcrumb(["Localization"]);
     clearSourceSelector();
@@ -682,7 +720,9 @@
       for (var gb of groupSubjects(loc)) {
         html += '<span class="loc-group-chip">' + escapeHtml(formatGroup(gb.group)) + ' <b>' + gb.subjects.length + '</b></span>';
       }
-      html += '</div><div class="loc-links">';
+      html += '</div>';
+      html += runProvenanceHtml(loc.run);
+      html += '<div class="loc-links">';
       html += '<a class="btn-link" href="#/localization/subjects/' + enc + '">Browse subjects</a>';
       html += '<a class="btn-link" href="#/localization/qc/' + enc + '">QC dashboard</a>';
       html += '</div></div>';

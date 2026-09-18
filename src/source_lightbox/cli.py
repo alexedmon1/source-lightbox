@@ -161,6 +161,10 @@ def main():
 @click.option("--exclude-analysis", "exclude_analyses", multiple=True,
               help="Analysis name to omit from the gallery (repeatable). Overrides "
                    "the study config's exclude_analyses / the built-in default.")
+@click.option("--include-retired", is_flag=True, default=False,
+              help="Publish the retired vertex analyses when an old results tree "
+                   "still carries them. They left source-analytics in v0.8.0 for "
+                   "the unmaintained source-analytics-vertex plugin.")
 @click.option("--home-link", default=None,
               help="Relative URL to a splash/landing page, rendered as a 'back' link in "
                    "the sidebar (e.g. ../index.html when this gallery is a view under a "
@@ -188,6 +192,7 @@ def build(
     brain_python,
     roi_categories,
     exclude_analyses,
+    include_retired,
     home_link,
     home_label,
     verbose,
@@ -215,6 +220,8 @@ def build(
     paradigm_display = None
     # Analyses to omit from the gallery (from --config); CLI flag takes precedence.
     cfg_exclude = None
+    # Publish the retired vertex analyses (from --config); CLI flag also sets it.
+    cfg_include_retired = False
     # Treatment-group display names / order (from --config `groups:`).
     group_labels = group_order = None
     # The study's atlas (from --config `pipeline.atlas`): the render workers categorise
@@ -320,6 +327,7 @@ def build(
                 if isinstance(p, dict) and p.get("display")
             } or None
         cfg_exclude = study_cfg.get("exclude_analyses")
+        cfg_include_retired = bool(study_cfg.get("include_retired"))
         # ROI categories: an explicit YAML path, else the study's own inline map (the one
         # source-analytics analysed with; a profile's narrowing for a profile build), else
         # the conventional file beside the config. Left None, the render workers fall
@@ -411,6 +419,7 @@ def build(
         group_order=group_order,
         home_link=home_link,
         home_label=home_label,
+        include_retired=include_retired or cfg_include_retired,
         # CLI flag > study-config `exclude_analyses:` > BuildConfig built-in default.
         **({"exclude_analyses": list(exclude_analyses)} if exclude_analyses
            else {"exclude_analyses": list(cfg_exclude)} if cfg_exclude is not None
