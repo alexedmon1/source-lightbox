@@ -108,3 +108,43 @@ landscape and group-ordered (in `source-localization` `study/qc.py`).
 ## Open items
 
 - `roi_aperiodic` brain mosaic errors and falls back to a heatmap — to fix.
+
+### Reporting defects found 2026-10-02 (to fix later)
+
+Found when an MRI analysis (cuprizone H1c) was built into a gallery as a
+feasibility test for neuro-lightbox (now a separate project derived from this
+one — see `NEURO_LIGHTBOX_PLAN.md`). They sit in the shared digest/render code,
+so they can affect EEG galleries too. Each item says where, and what "fixed"
+means.
+
+1. **Correction mislabelled.** `_sig_note` (`summarize.py:457`) falls back to
+   "FDR q < 0.05" when a table has only `p_value`/`p` — an uncorrected p is
+   reported as FDR-corrected. Fix: say what decided significance
+   ("uncorrected p < 0.05", "FDR q < 0.05", "p_corrected < 0.05"), and "not
+   recorded" when the table does not say.
+2. **Effect sizes always labelled Hedges g.** `_EFFECT_COLS` (`summarize.py:35`)
+   formats `effect_size` as `g=`, and the heatmap colour bar reads "Hedges g".
+   First check whether every source-analytics module's `effect_size` really is
+   Hedges g; if any writes another measure (d, r, β), take the label from the
+   data instead.
+3. **Direction wording assumes a pair of groups.** The digest legend "▲/▼ = the
+   first-listed group of each pair is higher" is wrong for one-sample /
+   within-subject contrasts (▲ means increase) and for weighted contrasts across
+   more than two groups. Fix: word the arrow by the contrast's kind; check which
+   kinds source-analytics hypotheses can have.
+4. **Nulls shown without magnitude.** A contrast with no significant effect reads
+   "No significant effects" (`_null_item`, `summarize.py:1113`). Fix: show its
+   largest/primary effect and p anyway, marked n.s. — the effect of a null is
+   part of the result.
+5. **No CIs in the digest.** Confidence intervals are rendered only for decoding
+   tables (`ci_*`). Fix: show the CI next to the effect wherever a table has one.
+6. **The digest leads with a significance count** ("31 significant effects
+   across 7 of 12 comparisons"). Fix: lead with the primary / confirmatory
+   contrast's effect, uncertainty and correction; counts after, with their
+   threshold.
+7. **Heatmap rows ignore the configured contrast order.** Rows came out in the
+   table's first-seen order (interleaved), not the YAML tier / contrast order.
+   Fix: order rows by the config.
+8. Minor: without a working source-analytics interpreter every analysis is
+   grouped under "Other" (`_read_analysis_meta`, `builder.py:219`) — a fallback
+   from the config would be better than one bucket.
