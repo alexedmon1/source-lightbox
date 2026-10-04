@@ -112,10 +112,19 @@ landscape and group-ordered (in `source-localization` `study/qc.py`).
 ### Reporting defects found 2026-10-02 (to fix later)
 
 Found when an MRI analysis (cuprizone H1c) was built into a gallery as a
-feasibility test for neuro-lightbox (now a separate project derived from this
-one — see `NEURO_LIGHTBOX_PLAN.md`). They sit in the shared digest/render code,
-so they can affect EEG galleries too. Each item says where, and what "fixed"
-means.
+feasibility test for neuro-lightbox (now a separate MRI project derived from
+this one — see `NEURO_LIGHTBOX_PLAN.md`). They sit in the shared digest/render
+code, so they can affect EEG galleries too. Each item says where, and what
+"fixed" means.
+
+**Port from:** neuro-lightbox fixed all eight items for EEG before it became MRI-only —
+its commit `1500523` ("Phase 3 on today's trees"): `contract.py` holds the words
+(correction statements, effects with their measure and CI, what ▲ means), and
+`profiles/eeg/reading.py` reads source-analytics' columns into them
+(`effect_size_type`, `q_value` + `fdr_family`, `kind`, `group_a` / `group_b`).
+Its `tests/test_contract.py` pins each defect. It also replaced study-specific
+names left in `app.js` (one study's dose labels, another's group ids) with the
+study's own groups — worth porting too.
 
 1. **Correction mislabelled.** `_sig_note` (`summarize.py:457`) falls back to
    "FDR q < 0.05" when a table has only `p_value`/`p` — an uncorrected p is
