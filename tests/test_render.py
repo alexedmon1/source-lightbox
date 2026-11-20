@@ -366,3 +366,9 @@ def test_circos_trigger_needs_subnetwork_edges_and_edge_csv(tmp_path, monkeypatc
     names = sorted(f.filename for f in figs)
     # circos AND the NBS component heatmap (circos no longer replace the overview)
     assert names[0].startswith("circos__") and any("nbs" in n for n in names[1:])
+
+
+def test_cohens_d_tables_select_the_effect_renderers():
+    # source-analytics' legacy post-hoc tables name the effect cohens_d from 2026-11-20
+    assert select_renderer("contrast,band,cohens_d,significant".split(",")) is EffectSizeHeatmap
+    assert select_renderer("contrast,roi,band,cohens_d".split(",")) is RoiBandHeatmap

@@ -379,3 +379,20 @@ def test_role_badge_and_gate_note():
     assert 'sig-role-confirmatory">confirmatory</span>' in html
     assert 'sig-role-exploratory">exploratory</span>' in html
     assert "gated on KO vs WT" in html
+
+
+def test_source_analytics_cohens_d_is_read_and_called_d():
+    # source-analytics (2026-11-20) calls its uncorrected standardized difference cohens_d: the legacy
+    # column, and effect_size_type in the hypothesis tables. Both read as signed contrasts, labelled d.
+    legacy = _tbl("roi_psd_posthoc_global.csv", "contrast,dv,band,cohens_d,significant",
+                  ["disease_effect,relative,Low Gamma,1.62,TRUE", "dose_icv,relative,Alpha,0.10,FALSE"])
+    html = build_significance_summary([legacy])
+    assert html is not None and "d=1.62" in html and "arrow up" in html
+    graph = _tbl(
+        "roi_graph_hypotheses.csv",
+        "hypothesis,band,spatial,conn_metric,graph_metric,effect_size,effect_size_type,q_value,significant",
+        ["disease_effect,Alpha,,pli,global_efficiency,0.78,cohens_d,0.008,True",
+         "disease_effect,Beta,,aec,modularity,-0.61,cohens_d,0.02,True"],
+    )
+    html = build_significance_summary([graph])
+    assert "d&le;0.78" in html and "arrow up" in html and "&omega;" not in html

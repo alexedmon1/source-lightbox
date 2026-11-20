@@ -34,6 +34,8 @@ from .render import (
 # hedges_g stays first so modules that already produce a g-digest are unchanged.
 _EFFECT_COLS = (
     ("hedges_g", lambda v: f"g={abs(v):.2f}", True),
+    # source-analytics renamed its uncorrected standardized difference to cohens_d (2026-11-20)
+    ("cohens_d", lambda v: f"d={abs(v):.2f}", True),
     ("effect_size", lambda v: f"g={abs(v):.2f}", True),  # native alias of hedges_g
     ("coefficient", lambda v: f"&beta;={v:+.2f}", True),
     ("auc", lambda v: f"AUC={v:.2f}", False),
@@ -994,7 +996,8 @@ def _build_graph_summary(table: dict, _label, groups: dict) -> str | None:
         for gm, rs in sorted(by_gm.items(), key=lambda kv: -_peak(kv[1])):
             best = max(rs, key=lambda x: abs(_to_float(x.get("effect_size")) or 0.0))
             v = _to_float(best.get("effect_size")) or 0.0
-            signed = str(best.get("effect_size_type", "")).lower() == "hedges_g"
+            etype = str(best.get("effect_size_type", "")).lower()
+            signed = etype in ("hedges_g", "cohens_d")     # a contrast; otherwise an omnibus omega squared
             arrow = ""
             if signed:
                 arrow = ('<span class="arrow up">&#9650;</span> ' if v > 0
@@ -1002,7 +1005,8 @@ def _build_graph_summary(table: dict, _label, groups: dict) -> str | None:
             bands = _order_graph_bands({str(x.get("band")) for x in rs if x.get("band")})
             conns = sorted({_pretty_metric(x.get("conn_metric")) for x in rs if x.get("conn_metric")})
             label = _GRAPH_METRIC_LABEL.get(gm, str(gm).replace("_", " "))
-            estr = f"g&le;{abs(v):.2f}" if signed else f"&omega;&sup2;&le;{abs(v):.2f}"
+            letter = "d" if etype == "cohens_d" else "g"
+            estr = f"{letter}&le;{abs(v):.2f}" if signed else f"&omega;&sup2;&le;{abs(v):.2f}"
             band_html = (f' <span class="sig-facet">{escape(", ".join(bands))}</span>'
                          if bands else "")
             conn_html = (f' <span class="sig-pairs">{escape(", ".join(conns))}</span>'

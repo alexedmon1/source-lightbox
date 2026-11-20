@@ -41,6 +41,7 @@ _ALIAS_TO_NATIVE = {
     "roi": "spatial",
     "power_type": "dv",
     "hedges_g": "effect_size",
+    "cohens_d": "effect_size",
     "p_fdr": "q_value",
     "t": "stat",
     "t_ratio": "stat",

@@ -92,6 +92,7 @@ _ALIAS_TO_NATIVE = {
     "t_ratio": "stat",
     "t": "stat",
     "hedges_g": "effect_size",
+    "cohens_d": "effect_size",     # source-analytics' legacy tables from 2026-11-20
     "p_fdr": "q_value",
 }
 
@@ -317,7 +318,7 @@ class RoiBandHeatmap(_Renderer):
         return (_any(headers, "hypothesis", "contrast")
                 and _any(headers, "spatial", "roi")
                 and "band" in headers
-                and _any(headers, "effect_size", "hedges_g"))
+                and _any(headers, "effect_size", "hedges_g", "cohens_d"))
 
     @staticmethod
     def render(records, headers, out_dir, stem, dpi, overview=False, contrast_labels=None):
@@ -569,7 +570,7 @@ class EffectSizeHeatmap(_Renderer):
         if _any(headers, *_PER_VERTEX_COLS):
             return False
         return (
-            _any(headers, "effect_size", "hedges_g")
+            _any(headers, "effect_size", "hedges_g", "cohens_d")
             and _any(headers, "hypothesis", "contrast")
             and _any(headers, "band", "freq_pair")
         )
